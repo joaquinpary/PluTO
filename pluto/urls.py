@@ -21,19 +21,20 @@ from django.urls import path
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
+mongo_client = MongoClient(
+    host=settings.MONGO_CONFIG['HOST'],
+    port=settings.MONGO_CONFIG['PORT'],
+    username=settings.MONGO_CONFIG['USERNAME'] or None,
+    password=settings.MONGO_CONFIG['PASSWORD'] or None,
+    serverSelectionTimeoutMS=1000,
+)
+
 
 def healthcheck(_request):
     mongo_status = 'unreachable'
 
     try:
-        client = MongoClient(
-            host=settings.MONGO_CONFIG['HOST'],
-            port=settings.MONGO_CONFIG['PORT'],
-            username=settings.MONGO_CONFIG['USERNAME'] or None,
-            password=settings.MONGO_CONFIG['PASSWORD'] or None,
-            serverSelectionTimeoutMS=1000,
-        )
-        client.admin.command('ping')
+        mongo_client.admin.command('ping')
         mongo_status = 'ok'
     except PyMongoError:
         return JsonResponse(
