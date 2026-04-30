@@ -1,0 +1,51 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python manage.py runserver 0.0.0.0:8000
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_DB: ${MONGO_DB:-pluto}
+      MONGO_USERNAME: ${MONGO_USERNAME:-}
+      MONGO_PASSWORD: ${MONGO_PASSWORD:-}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-pluto}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-change-me}
+    depends_on:
+      - mongodb
+      - mosquitto
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    entrypoint: ["/bin/sh", "/usr/local/bin/mosquitto-entrypoint.sh"]
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME:-pluto}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-change-me}
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/entrypoint.sh:/usr/local/bin/mosquitto-entrypoint.sh:ro
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
