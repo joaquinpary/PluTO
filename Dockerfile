@@ -14,7 +14,9 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY . ./
+COPY pluto ./pluto/
+COPY server_core/ ./server_core/
+COPY manage.py ./
 
 EXPOSE 8000
 

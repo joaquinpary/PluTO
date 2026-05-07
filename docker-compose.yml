@@ -25,6 +25,9 @@ services:
     volumes:
       - .:/app
     restart: unless-stopped
+    networks:
+      - pluto-network
+      - docker-proxy
 
   mongodb:
     image: mongo:7
@@ -33,6 +36,8 @@ services:
     volumes:
       - mongo-data:/data/db
     restart: unless-stopped
+    networks:
+      - pluto-network
 
   mosquitto:
     image: eclipse-mosquitto:2
@@ -46,6 +51,28 @@ services:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./mosquitto/entrypoint.sh:/usr/local/bin/mosquitto-entrypoint.sh:ro
     restart: unless-stopped
+    networks:
+      - pluto-network
+
+  dockerproxy:
+    image: tecnativa/docker-socket-proxy:v0.4.2
+    environment:
+      - CONTAINERS=1
+      - POST=1
+      - DELETE=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - pluto-network
+      - docker-proxy
 
 volumes:
   mongo-data:
+networks:
+  pluto-network:
+    name: pluto-network
+    driver: bridge
+  docker-proxy:
+    name: docker-proxy
+    driver: bridge
+    internal: true
