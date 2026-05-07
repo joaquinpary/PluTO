@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'server_core',
 ]
 
 MIDDLEWARE = [
@@ -136,3 +137,13 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+import mongoengine
+
+mongoengine.connect(
+    db=MONGO_CONFIG['NAME'],
+    host=MONGO_CONFIG['HOST'],
+    port=MONGO_CONFIG['PORT'],
+    username=MONGO_CONFIG['USERNAME'],
+    password=MONGO_CONFIG['PASSWORD'],
+)
