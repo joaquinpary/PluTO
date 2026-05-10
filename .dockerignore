@@ -1,0 +1,10 @@
+plugins/
+mosquitto/
+
+db.sqlite3
+.git/
+__pycache__/
+*.pyc
+
+*.md
+LICENSE
