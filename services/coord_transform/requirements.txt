@@ -1,0 +1,4 @@
+pydantic>=2.0.0
+skyfield>=1.46
+numpy>=1.20
+paho-mqtt>=1.6.0
