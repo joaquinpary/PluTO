@@ -33,6 +33,10 @@ services:
     environment:
       MQTT_BROKER_URL: mosquitto
       MQTT_BROKER_PORT: 1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-pluto}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-change-me}
+    volumes:
+      - ./services/coord_transform:/app
     depends_on:
       - mosquitto
     restart: unless-stopped

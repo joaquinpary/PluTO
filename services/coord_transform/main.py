@@ -9,8 +9,15 @@ def main():
     logger.info("Starting coordinates transformation engine...")
     broker_url = os.environ.get("MQTT_BROKER_URL", "mosquitto")
     broker_port = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
+    broker_user = os.environ.get("MQTT_USERNAME", "pluto")
+    broker_pass = os.environ.get("MQTT_PASSWORD", "change-me")
     
-    mqtt_client = CoordinateTransformMQTTClient(broker_url=broker_url, broker_port=broker_port)
+    mqtt_client = CoordinateTransformMQTTClient(
+        broker_url=broker_url, 
+        broker_port=broker_port,
+        username=broker_user,
+        password=broker_pass
+    )
     try:
         mqtt_client.start()
     except KeyboardInterrupt:
