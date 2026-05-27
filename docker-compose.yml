@@ -73,6 +73,8 @@ services:
     image: tecnativa/docker-socket-proxy:v0.4.2
     environment:
       - CONTAINERS=1
+      - BUILD=1
+      - IMAGES=1
       - POST=1
       - DELETE=1
     volumes:
