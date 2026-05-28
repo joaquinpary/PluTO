@@ -114,8 +114,7 @@ class PluginOrchestrator:
 
         image_name = image_result
 
-        # To define        
-        mqtt_topic = f"ingesta/{plugin_type}/{instance_id}/posicion"
+        mqtt_topic = f"plugin/{plugin_type}/{instance_id}/coordinates/raw"
 
         environment = {
             "MQTT_BROKER_URL": os.environ.get("MQTT_BROKER", "mosquitto"),
@@ -131,7 +130,7 @@ class PluginOrchestrator:
         if error:
             return False, error
 
-        environment.update(handler.get_environment(kwargs))
+        environment.update(handler.get_environment({**kwargs, "plugin_id": str(instance_id)}))
         volumes = handler.get_volumes(kwargs)
 
         try:

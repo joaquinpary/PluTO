@@ -36,6 +36,9 @@ class FileTrackerHandler(BasePluginHandler):
         environment["FILE_PATH"] = f"/data/{file_name}"
         environment["COORD_TYPE"] = str(config["coord_type"]).upper()
         environment["COORD_FORMAT"] = str(config["coord_format"]).upper()
+        plugin_id = config.get("plugin_id")
+        if plugin_id is not None:
+            environment["MQTT_PUBLISH_TOPIC"] = f"plugin/file_tracker/{plugin_id}/coordinates/raw"
         return environment
 
     def get_volumes(self, config):
