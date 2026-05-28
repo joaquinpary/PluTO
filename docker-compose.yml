@@ -43,6 +43,8 @@ services:
     depends_on:
       - mosquitto
     restart: unless-stopped
+    networks:
+      - pluto-network
 
   mongodb:
     image: mongo:7
@@ -77,6 +79,7 @@ services:
       - DELETE=1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
     networks:
       - pluto-network
       - docker-proxy

@@ -25,7 +25,7 @@ class CoordinateTransformMQTTClient:
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             logger.info("Connected to MQTT broker successfully.")
-            topic = "ingesta/+/+/posicion"
+            topic = "plugin/+/coordinates/raw"
             client.subscribe(topic)
             logger.info(f"Subscribed to topic: {topic}")
         else:
@@ -37,11 +37,11 @@ class CoordinateTransformMQTTClient:
         logger.debug(f"Received message on topic {topic}")
         
         try:
-            # Extraer plugin_type e instance_id del tópico (ej. ingesta/<plugin_type>/<instance_id>/posicion)
+            # Extraer instance_id del tópico (ej. plugin/<instance_id>/coordinates/raw)
             parts = topic.split('/')
             if len(parts) >= 4:
-                plugin_type = parts[1]
-                instance_id = parts[2]
+                plugin_type = parts[1] # En el nuevo formato parece que plugin_type e instance_id son el mismo segmento
+                instance_id = parts[1]
             else:
                 plugin_type = "unknown"
                 instance_id = "unknown"
@@ -64,7 +64,7 @@ class CoordinateTransformMQTTClient:
             )
             
             # Publicar
-            out_topic = f"procesado/{plugin_type}/{instance_id}/polar"
+            out_topic = f"plugin/{instance_id}/coordinates/polar"
             out_json = polar_payload.model_dump_json()
             client.publish(out_topic, out_json)
             logger.info(f"Successfully transformed and published {len(polar_points)} points to {out_topic}")
