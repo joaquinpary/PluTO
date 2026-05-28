@@ -25,7 +25,7 @@ class CoordinateTransformMQTTClient:
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             logger.info("Connected to MQTT broker successfully.")
-            topic = "plugin/+/coordinates/raw"
+            topic = "ingesta/+/+/posicion"
             client.subscribe(topic)
             logger.info(f"Subscribed to topic: {topic}")
         else:
@@ -37,13 +37,15 @@ class CoordinateTransformMQTTClient:
         logger.debug(f"Received message on topic {topic}")
         
         try:
-            # Extraer plugin_id del tópico (ej. plugin/<plugin_id>/coordinates/raw)
+            # Extraer plugin_type e instance_id del tópico (ej. ingesta/<plugin_type>/<instance_id>/posicion)
             parts = topic.split('/')
-            if len(parts) >= 2:
-                plugin_id = parts[1]
+            if len(parts) >= 4:
+                plugin_type = parts[1]
+                instance_id = parts[2]
             else:
-                plugin_id = "unknown"
-                logger.warning(f"Could not extract plugin_id from topic {topic}")
+                plugin_type = "unknown"
+                instance_id = "unknown"
+                logger.warning(f"Could not extract plugin_type and instance_id from topic {topic}")
                 return
                 
             # Validar y parsear JSON con Pydantic
@@ -52,7 +54,7 @@ class CoordinateTransformMQTTClient:
             # Transformar
             polar_points = []
             for pt in raw_payload.coordinates:
-                polar_pt = transform_coordinates(pt, raw_payload.station, raw_payload.type)
+                polar_pt = transform_coordinates(pt, raw_payload.station, raw_payload.type, raw_payload.coord_format)
                 polar_points.append(polar_pt)
                 
             # Construir payload de salida
@@ -62,7 +64,7 @@ class CoordinateTransformMQTTClient:
             )
             
             # Publicar
-            out_topic = f"plugin/{plugin_id}/coordinates/polar"
+            out_topic = f"procesado/{plugin_type}/{instance_id}/polar"
             out_json = polar_payload.model_dump_json()
             client.publish(out_topic, out_json)
             logger.info(f"Successfully transformed and published {len(polar_points)} points to {out_topic}")

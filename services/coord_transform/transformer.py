@@ -1,10 +1,18 @@
 import logging
 import math
+from typing import Union
 import numpy as np
 from skyfield.api import load, wgs84
 from skyfield.positionlib import Geocentric
 
-from models import CoordinatePoint, Station, PolarCoordinatePoint
+from models import (
+    CartesianCoordinatePoint,
+    GeoCoordinatePoint,
+    PolarCoordinatePoint,
+    Station,
+    CoordinateType,
+    CoordinateFormat
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +22,7 @@ ts = load.timescale()
 # Distancia en km de 1 UA (para conversión de skyfield)
 AU_KM = 149597870.700
 
-def transform_eci_to_polar(point: CoordinatePoint, station: Station) -> PolarCoordinatePoint:
-    """
-    Transforma coordenadas ECI (Earth-Centered Inertial) a Polares (Azimuth, Elevación, Rango)
-    """
+def transform_eci_cartesian_to_polar(point: CartesianCoordinatePoint, station: Station) -> PolarCoordinatePoint:
     t = ts.from_datetime(point.timestamp)
     
     # Skyfield maneja ICRF (similar a ECI) en Unidades Astronómicas (AU)
@@ -38,11 +43,7 @@ def transform_eci_to_polar(point: CoordinatePoint, station: Station) -> PolarCoo
         range=distance.km
     )
 
-def transform_ecef_to_polar(point: CoordinatePoint, station: Station) -> PolarCoordinatePoint:
-    """
-    Transforma coordenadas ECEF (Earth-Centered, Earth-Fixed) a Polares.
-    Realiza un paso intermedio de ECEF a ENU, y luego a Polar.
-    """
+def transform_ecef_cartesian_to_polar(point: CartesianCoordinatePoint, station: Station) -> PolarCoordinatePoint:
     observer = wgs84.latlon(station.lat, station.lon, elevation_m=station.alt)
     stat_ecef_km = observer.itrs_xyz.km
     
@@ -61,14 +62,27 @@ def transform_ecef_to_polar(point: CoordinatePoint, station: Station) -> PolarCo
     n = -slat * clon * dx - slat * slon * dy + clat * dz
     u = clat * clon * dx + clat * slon * dy + slat * dz
     
-    # Transformar el resultante ENU a Polar (simulando un CoordinatePoint de tipo ENU)
-    enu_point = CoordinatePoint(timestamp=point.timestamp, x=e, y=n, z=u)
-    return transform_enu_to_polar(enu_point, station)
+    # Transformar el resultante ENU a Polar (simulando un CartesianCoordinatePoint de tipo ENU)
+    enu_point = CartesianCoordinatePoint(timestamp=point.timestamp, x=e, y=n, z=u)
+    return transform_enu_cartesian_to_polar(enu_point, station)
 
-def transform_enu_to_polar(point: CoordinatePoint, station: Station) -> PolarCoordinatePoint:
-    """
-    Transforma coordenadas ENU (East, North, Up) a Polares.
-    """
+def transform_ecef_geo_to_polar(point: GeoCoordinatePoint, station: Station) -> PolarCoordinatePoint:
+    t = ts.from_datetime(point.timestamp)
+    target = wgs84.latlon(point.lat, point.lon, elevation_m=point.alt)
+    observer = wgs84.latlon(station.lat, station.lon, elevation_m=station.alt)
+    
+    # Difference
+    diff = target.at(t) - observer.at(t)
+    alt, az, distance = diff.altaz()
+    
+    return PolarCoordinatePoint(
+        timestamp=point.timestamp,
+        az=az.degrees,
+        el=alt.degrees,
+        range=distance.km
+    )
+
+def transform_enu_cartesian_to_polar(point: CartesianCoordinatePoint, station: Station) -> PolarCoordinatePoint:
     e = point.x
     n = point.y
     u = point.z
@@ -90,29 +104,29 @@ def transform_enu_to_polar(point: CoordinatePoint, station: Station) -> PolarCoo
         range=r
     )
 
-def transform_polar(point: CoordinatePoint, station: Station) -> PolarCoordinatePoint:
-    """
-    Pasa las coordenadas Polar directas mapeando campos.
-    """
+def transform_enu_polar_to_polar(point: PolarCoordinatePoint, station: Station) -> PolarCoordinatePoint:
     return PolarCoordinatePoint(
         timestamp=point.timestamp,
-        az=point.x,
-        el=point.y,
-        range=point.z
+        az=point.az,
+        el=point.el,
+        range=point.range
     )
 
-def transform_coordinates(point: CoordinatePoint, station: Station, coord_type: str) -> PolarCoordinatePoint:
-    """
-    Función de ruteo para transformar un punto basado en su tipo.
-    """
-    coord_type_upper = coord_type.upper()
-    if coord_type_upper == "ECI":
-        return transform_eci_to_polar(point, station)
-    elif coord_type_upper == "ECEF":
-        return transform_ecef_to_polar(point, station)
-    elif coord_type_upper == "ENU":
-        return transform_enu_to_polar(point, station)
-    elif coord_type_upper == "POLAR":
-        return transform_polar(point, station)
+def transform_coordinates(
+    point: Union[CartesianCoordinatePoint, GeoCoordinatePoint, PolarCoordinatePoint],
+    station: Station,
+    coord_type: CoordinateType,
+    coord_format: CoordinateFormat
+) -> PolarCoordinatePoint:
+    if coord_type == CoordinateType.ECI and coord_format == CoordinateFormat.CARTESIAN:
+        return transform_eci_cartesian_to_polar(point, station)
+    elif coord_type == CoordinateType.ECEF and coord_format == CoordinateFormat.CARTESIAN:
+        return transform_ecef_cartesian_to_polar(point, station)
+    elif coord_type == CoordinateType.ECEF and coord_format == CoordinateFormat.GEO:
+        return transform_ecef_geo_to_polar(point, station)
+    elif coord_type == CoordinateType.ENU and coord_format == CoordinateFormat.CARTESIAN:
+        return transform_enu_cartesian_to_polar(point, station)
+    elif coord_type == CoordinateType.ENU and coord_format == CoordinateFormat.POLAR:
+        return transform_enu_polar_to_polar(point, station)
     else:
-        raise ValueError(f"Tipo de coordenada no soportado: {coord_type}")
+        raise ValueError(f"Tipo de coordenada no soportado: {coord_type} - {coord_format}")
