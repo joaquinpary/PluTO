@@ -91,7 +91,7 @@ class PluginInstanceAdmin(admin.ModelAdmin):
             return 'Unknown'
 
         orchestrator = PluginOrchestrator()
-        success, runtime_status = orchestrator.get_container_status(obj.plugin_type, obj.pk)
+        success, runtime_status = orchestrator.get_container_status(obj.plugin_type, obj.plugin_uuid)
         if not success:
             return 'Unknown'
 
@@ -100,7 +100,7 @@ class PluginInstanceAdmin(admin.ModelAdmin):
     def _start_plugin(self, plugin, orchestrator):
         success, result = orchestrator.spawn_plugin(
             plugin_type=plugin.plugin_type,
-            instance_id=plugin.pk,
+            instance_id=plugin.plugin_uuid,
             station_coordinates=plugin.station_coordinates,
             **(plugin.config or {}),
         )
@@ -117,7 +117,7 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         return False, result
 
     def _stop_plugin(self, plugin, orchestrator, failed_status=PluginInstance.Status.ERROR):
-        success, result = orchestrator.kill_plugin(plugin.plugin_type, plugin.pk)
+        success, result = orchestrator.kill_plugin(plugin.plugin_type, plugin.plugin_uuid)
 
         if success:
             plugin.status = PluginInstance.Status.STOPPED
@@ -130,7 +130,7 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         return False, result
 
     def _sync_plugin_status(self, plugin, orchestrator):
-        success, runtime_status = orchestrator.get_container_status(plugin.plugin_type, plugin.pk)
+        success, runtime_status = orchestrator.get_container_status(plugin.plugin_type, plugin.plugin_uuid)
         if not success:
             return False, 'Could not query container status from Docker.'
 

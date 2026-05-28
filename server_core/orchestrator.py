@@ -114,7 +114,7 @@ class PluginOrchestrator:
 
         image_name = image_result
 
-        mqtt_topic = f"plugin/{plugin_type}/{instance_id}/coordinates/raw"
+        mqtt_topic = f"plugin/{instance_id}/coordinates/raw"
 
         environment = {
             "MQTT_BROKER_URL": os.environ.get("MQTT_BROKER", "mosquitto"),

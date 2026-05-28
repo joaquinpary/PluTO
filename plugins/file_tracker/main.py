@@ -38,7 +38,7 @@ def main():
     broker_port = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
     broker_user = os.environ.get("MQTT_USERNAME", "pluto")
     broker_pass = os.environ.get("MQTT_PASSWORD", "change-me")
-    publish_topic = os.environ.get("MQTT_PUBLISH_TOPIC", "plugin/file_tracker/coordinates/raw")
+    publish_topic = os.environ.get("MQTT_PUBLISH_TOPIC", "plugin/unknown/coordinates/raw")
 
     station = build_station_from_env()
 

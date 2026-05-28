@@ -1,3 +1,4 @@
+import uuid
 import mongoengine
 from datetime import datetime
 
@@ -53,6 +54,7 @@ class PluginInstance(models.Model):
 
     name        = models.CharField(max_length=100, unique=True)
     plugin_type = models.CharField(max_length=50)
+    plugin_uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     status      = models.CharField(max_length=20, choices=Status.choices, default=Status.STOPPED)
     container_id = models.CharField(max_length=128, blank=True)
 
