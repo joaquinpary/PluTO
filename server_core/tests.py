@@ -1,10 +1,11 @@
 from unittest.mock import patch
 
 from django.contrib.admin import AdminSite
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase
 
 from .admin import PluginInstanceAdmin
 from .models import PluginInstance
+from .plugin_handlers import PLUGIN_HANDLERS
 
 
 class PluginInstanceAdminTests(TestCase):
@@ -79,3 +80,24 @@ class PluginInstanceAdminTests(TestCase):
 
 		self.assertFalse(PluginInstance.objects.filter(pk=plugin.pk).exists())
 		stop_plugin.assert_called_once()
+
+
+class TinyGSHandlerTests(SimpleTestCase):
+	def setUp(self):
+		self.handler = PLUGIN_HANDLERS['tinygs']
+
+	def test_validate_requires_device(self):
+		self.assertIsNotNone(self.handler.validate({}))
+		self.assertIsNotNone(self.handler.validate({'tinygs_device': '   '}))
+
+	def test_validate_rejects_mqtt_wildcards(self):
+		for device in ('+', '#', 'heltec/lp-01'):
+			self.assertIsNotNone(self.handler.validate({'tinygs_device': device}))
+
+	def test_validate_accepts_plain_device_id(self):
+		self.assertIsNone(self.handler.validate({'tinygs_device': 'heltec-lp-01'}))
+
+	def test_get_environment_exposes_device_id(self):
+		environment = self.handler.get_environment({'tinygs_device': 'heltec-lp-01'})
+
+		self.assertEqual(environment['TINYGS_DEVICE'], 'heltec-lp-01')
