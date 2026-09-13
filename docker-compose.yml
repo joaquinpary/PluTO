@@ -1,22 +1,26 @@
+x-django-env: &django-env
+  SECRET_KEY: ${SECRET_KEY:-change-me}
+  DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+  MONGO_HOST: mongodb
+  MONGO_PORT: 27017
+  MONGO_DB: ${MONGO_DB:-pluto}
+  MONGO_USERNAME: ${MONGO_USERNAME:-}
+  MONGO_PASSWORD: ${MONGO_PASSWORD:-}
+  MONGO_AUTH_SOURCE: ${MONGO_AUTH_SOURCE:-admin}
+  MQTT_HOST: mosquitto
+  MQTT_PORT: 1883
+  MQTT_USERNAME: ${MQTT_USERNAME:-pluto}
+  MQTT_PASSWORD: ${MQTT_PASSWORD:-change-me}
+
 services:
   server:
     build:
       context: .
       dockerfile: Dockerfile
+    image: pluto/server:latest
     command: python manage.py runserver 0.0.0.0:8000
-    environment:
-      SECRET_KEY: ${SECRET_KEY:-change-me}
-      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
-      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
-      MONGO_HOST: mongodb
-      MONGO_PORT: 27017
-      MONGO_DB: ${MONGO_DB:-pluto}
-      MONGO_USERNAME: ${MONGO_USERNAME:-}
-      MONGO_PASSWORD: ${MONGO_PASSWORD:-}
-      MQTT_HOST: mosquitto
-      MQTT_PORT: 1883
-      MQTT_USERNAME: ${MQTT_USERNAME:-pluto}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-change-me}
+    environment: *django-env
     depends_on:
       - mongodb
       - mosquitto
@@ -28,6 +32,22 @@ services:
     networks:
       - pluto-network
       - docker-proxy
+
+  mqtt_ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pluto/server:latest
+    command: python manage.py mqtt_ingest
+    environment: *django-env
+    depends_on:
+      - mongodb
+      - mosquitto
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    networks:
+      - pluto-network
 
   coord_transform:
     build:
@@ -48,6 +68,9 @@ services:
 
   mongodb:
     image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-admin}
     ports:
       - "27017:27017"
     volumes:

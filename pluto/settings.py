@@ -82,6 +82,14 @@ MONGO_CONFIG = {
     'NAME': config('MONGO_DB', default='pluto'),
     'USERNAME': config('MONGO_USERNAME', default=''),
     'PASSWORD': config('MONGO_PASSWORD', default=''),
+    'AUTH_SOURCE': config('MONGO_AUTH_SOURCE', default='admin'),
+}
+
+MQTT_CONFIG = {
+    'HOST': config('MQTT_HOST', default='mosquitto'),
+    'PORT': config('MQTT_PORT', default=1883, cast=int),
+    'USERNAME': config('MQTT_USERNAME', default=''),
+    'PASSWORD': config('MQTT_PASSWORD', default=''),
 }
 
 
@@ -144,6 +152,7 @@ mongoengine.connect(
     db=MONGO_CONFIG['NAME'],
     host=MONGO_CONFIG['HOST'],
     port=MONGO_CONFIG['PORT'],
-    username=MONGO_CONFIG['USERNAME'],
-    password=MONGO_CONFIG['PASSWORD'],
+    username=MONGO_CONFIG['USERNAME'] or None,
+    password=MONGO_CONFIG['PASSWORD'] or None,
+    authentication_source=MONGO_CONFIG['AUTH_SOURCE'] or None,
 )
