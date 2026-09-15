@@ -35,16 +35,24 @@ services:
 
   mqtt_ingest:
     build:
-      context: .
+      context: ./services/mqtt_ingest
       dockerfile: Dockerfile
-    image: pluto/server:latest
-    command: python manage.py mqtt_ingest
-    environment: *django-env
+    environment:
+      MQTT_BROKER_URL: mosquitto
+      MQTT_BROKER_PORT: 1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-pluto}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-change-me}
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_DB: ${MONGO_DB:-pluto}
+      MONGO_USERNAME: ${MONGO_USERNAME:-}
+      MONGO_PASSWORD: ${MONGO_PASSWORD:-}
+      MONGO_AUTH_SOURCE: ${MONGO_AUTH_SOURCE:-admin}
+    volumes:
+      - ./services/mqtt_ingest:/app
     depends_on:
       - mongodb
       - mosquitto
-    volumes:
-      - .:/app
     restart: unless-stopped
     networks:
       - pluto-network

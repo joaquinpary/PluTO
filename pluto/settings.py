@@ -85,13 +85,6 @@ MONGO_CONFIG = {
     'AUTH_SOURCE': config('MONGO_AUTH_SOURCE', default='admin'),
 }
 
-MQTT_CONFIG = {
-    'HOST': config('MQTT_HOST', default='mosquitto'),
-    'PORT': config('MQTT_PORT', default=1883, cast=int),
-    'USERNAME': config('MQTT_USERNAME', default=''),
-    'PASSWORD': config('MQTT_PASSWORD', default=''),
-}
-
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases

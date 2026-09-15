@@ -1,23 +1,14 @@
-"""Subscribes to the plugin data topics and persists every message into MongoDB.
-
-Runs as its own container (see the `mqtt_ingest` service in docker-compose.yml)
-rather than inside the Django server: `loop_forever()` under `runserver` would be
-duplicated by the autoreloader and write everything twice.
-"""
 import json
 import logging
-import os
 import re
 import signal
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
-from django.conf import settings
-from django.core.management.base import BaseCommand
 from mongoengine.errors import ValidationError
 from pymongo.errors import PyMongoError
 
-from server_core.models import PluginData
+from models import PluginData
 
 logger = logging.getLogger(__name__)
 
@@ -121,62 +112,49 @@ def build_document_fields(topic, payload):
     return fields
 
 
-class Command(BaseCommand):
-    help = 'Subscribes to plugin data topics and persists the messages into MongoDB.'
+class IngestMQTTClient:
+    """
+    Subscribes to every plugin's data topic and persists what arrives into
+    MongoDB. One writer for all plugins, so the schema lives in a single place.
+    """
 
-    def add_arguments(self, parser):
-        parser.add_argument('--topic', default=INGEST_TOPIC, help='Topic filter to subscribe to.')
-        parser.add_argument('--qos', type=int, default=1, help='Subscription QoS.')
-        parser.add_argument('--host', default=None, help='Overrides MQTT_HOST.')
-        parser.add_argument('--port', type=int, default=None, help='Overrides MQTT_PORT.')
-        parser.add_argument('--client-id', default='pluto-mqtt-ingest')
-        parser.add_argument('--log-level', default=os.environ.get('LOG_LEVEL', 'INFO').upper())
-
-    def handle(self, *args, **options):
-        # Django configures handlers for its own loggers only, so without this
-        # every INFO line from this command would be silently dropped.
-        logging.basicConfig(
-            level=options['log_level'],
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        )
-
-        self.topic = options['topic']
-        self.qos = options['qos']
+    def __init__(self, broker_url, broker_port, username=None, password=None,
+                 topic=INGEST_TOPIC, qos=1, client_id='pluto-mqtt-ingest'):
+        self.broker_url = broker_url
+        self.broker_port = broker_port
+        self.topic = topic
+        self.qos = qos
         self.stats = {'ingested': 0, 'rejected': 0, 'failed': 0}
 
-        host = options['host'] or settings.MQTT_CONFIG['HOST']
-        port = options['port'] or settings.MQTT_CONFIG['PORT']
-        username = settings.MQTT_CONFIG['USERNAME']
-        password = settings.MQTT_CONFIG['PASSWORD']
-
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=options['client_id'])
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
         if username and password:
-            client.username_pw_set(username, password)
+            self.client.username_pw_set(username, password)
 
         # A single bad message must never take the ingester down.
-        client.suppress_exceptions = True
-        client.on_connect = self.on_connect
-        client.on_disconnect = self.on_disconnect
-        client.on_message = self.on_message
-        client.reconnect_delay_set(min_delay=1, max_delay=30)
+        self.client.suppress_exceptions = True
+        self.client.on_connect = self.on_connect
+        self.client.on_disconnect = self.on_disconnect
+        self.client.on_message = self.on_message
+        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
 
-        self._install_signal_handlers(client)
+        self._install_signal_handlers()
 
-        logger.info('Connecting to MQTT broker at %s:%s', host, port)
-        client.connect(host, port, 60)
+    def start(self):
+        logger.info('Connecting to MQTT broker at %s:%s', self.broker_url, self.broker_port)
+        self.client.connect(self.broker_url, self.broker_port, 60)
         try:
             # depends_on does not wait for the broker to be ready.
-            client.loop_forever(retry_first_connection=True)
+            self.client.loop_forever(retry_first_connection=True)
         except KeyboardInterrupt:
             logger.info('Shutting down MQTT ingester...')
-            client.disconnect()
+            self.client.disconnect()
 
         logger.info('Final stats: %s', self.stats)
 
-    def _install_signal_handlers(self, client):
+    def _install_signal_handlers(self):
         def shutdown(_signum, _frame):
             logger.info('Signal received, disconnecting from the broker...')
-            client.disconnect()
+            self.client.disconnect()
 
         signal.signal(signal.SIGTERM, shutdown)
         signal.signal(signal.SIGINT, shutdown)

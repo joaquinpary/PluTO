@@ -40,35 +40,10 @@ class CoordinatesSent(GenericJSONDocument):
     # each element should have az and el values
     pass
 
-class PluginData(GenericJSONDocument):
-    """Collection for plugin data (one document per ingested MQTT message)"""
-    # contains data from all plugins organized through a plugin_id field
-    # could also use a "collection" field for each plugin
-
-    # Where the message came from
-    plugin_id    = mongoengine.StringField(required=True)
-    plugin_type  = mongoengine.StringField()
-    device       = mongoengine.StringField()
-    message_type = mongoengine.StringField(required=True)
-
-    # How the payload was normalized by the plugin before publishing
-    payload_format = mongoengine.StringField(default='json')
-    schema_version = mongoengine.IntField(default=1)
-
-    # Tracing: message_id correlates the plugin log line with this document,
-    # received_at is when the plugin saw it and created_at when it was persisted
-    message_id   = mongoengine.StringField()
-    source_topic = mongoengine.StringField()
-    ingest_topic = mongoengine.StringField()
-    received_at  = mongoengine.DateTimeField()
-
-    meta = {
-        'indexes': [
-            ('plugin_id', 'message_type', '-created_at'),
-            ('device', '-created_at'),
-        ],
-        'ordering': ['-created_at'],
-    }
+# PluginData now lives in services/mqtt_ingest/models.py: the ingester is its
+# only writer, so the schema belongs with it. When Django needs to read that
+# collection back (the HU-25 history views), lift it into a shared package
+# instead of redeclaring it here.
 
 class PluginInstance(models.Model):
     class Status(models.TextChoices):
