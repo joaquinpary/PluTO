@@ -1,11 +1,12 @@
 from unittest.mock import patch
 
 from django.contrib.admin import AdminSite
+from django.db import IntegrityError, OperationalError
+from django.db.models import ProtectedError
 from django.test import RequestFactory, SimpleTestCase, TestCase
-from pymongo.errors import PyMongoError
 
 from .admin import PluginInstanceAdmin
-from .models import PluginInstance
+from .models import PluginData, PluginInstance
 from .plugin_handlers import PLUGIN_HANDLERS
 
 
@@ -104,21 +105,49 @@ class TinyGSHandlerTests(SimpleTestCase):
 		self.assertEqual(environment['TINYGS_DEVICE'], 'heltec-lp-01')
 
 
+class PluginDataTests(TestCase):
+	def setUp(self):
+		self.plugin = PluginInstance.objects.create(name='tinygs-0', plugin_type='tinygs')
+
+	def test_created_at_is_set_by_the_database(self):
+		row = PluginData.objects.create(plugin=self.plugin, message_type='rx', payload={'rssi': -97})
+
+		row.refresh_from_db()
+
+		self.assertIsNotNone(row.created_at)
+
+	def test_message_id_is_unique(self):
+		PluginData.objects.create(plugin=self.plugin, message_type='rx', message_id='msg-1')
+
+		with self.assertRaises(IntegrityError):
+			PluginData.objects.create(plugin=self.plugin, message_type='rx', message_id='msg-1')
+
+	def test_rows_without_message_id_do_not_collide(self):
+		PluginData.objects.create(plugin=self.plugin, message_type='rx')
+		PluginData.objects.create(plugin=self.plugin, message_type='rx')
+
+		self.assertEqual(self.plugin.data.count(), 2)
+
+	def test_plugin_with_data_cannot_be_deleted(self):
+		PluginData.objects.create(plugin=self.plugin, message_type='rx')
+
+		with self.assertRaises(ProtectedError):
+			self.plugin.delete()
+
+
 class HealthcheckTests(SimpleTestCase):
-	def test_returns_503_when_mongo_command_fails(self):
-		with patch('pluto.urls.mongo_client') as mongo_client:
-			mongo_client.__getitem__.return_value.command.side_effect = PyMongoError('sin auth')
+	def test_returns_503_when_database_is_unreachable(self):
+		with patch('pluto.urls.connection') as connection:
+			connection.cursor.side_effect = OperationalError('password authentication failed')
 
 			response = self.client.get('/')
 
 		self.assertEqual(response.status_code, 503)
-		self.assertEqual(response.json()['mongodb'], 'unreachable')
+		self.assertEqual(response.json()['database'], 'unreachable')
 
-	def test_returns_200_when_mongo_command_succeeds(self):
-		with patch('pluto.urls.mongo_client') as mongo_client:
-			mongo_client.__getitem__.return_value.command.return_value = {'ok': 1.0}
-
+	def test_returns_200_when_database_answers(self):
+		with patch('pluto.urls.connection'):
 			response = self.client.get('/')
 
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json()['mongodb'], 'ok')
+		self.assertEqual(response.json()['database'], 'ok')

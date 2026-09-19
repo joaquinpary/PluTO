@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 
 SCHEMA_VERSION = 1
 
-# base64 inflates by 33% and Mongo documents cap at 16 MB, so a board with
-# broken firmware must not be able to fill the collection.
+# base64 inflates by 33% and every message becomes a PostgreSQL row, so a
+# board with broken firmware must not be able to fill the table.
 MAX_PAYLOAD_BYTES = 64 * 1024
 PREVIEW_BYTES = 1024
 
@@ -20,10 +20,13 @@ PREVIEW_BYTES = 1024
 def normalize_payload(raw):
     """Turn the board's raw bytes into (dict, payload_format).
 
-    The result is always a dict: PluginData.payload is a DictField, so a bare
-    list or scalar would be rejected on save. Note that json.loads(b"42")
-    returns 42 and json.loads(b"null") returns None -- both are valid JSON and
-    neither is a dict.
+    The result is always a dict: the ingester stores it in a column that holds
+    a JSON object, so a bare list or scalar is wrapped. Note that
+    json.loads(b"42") returns 42 and json.loads(b"null") returns None -- both
+    are valid JSON and neither is a dict.
+
+    Text carrying U+0000 goes as binary too: PostgreSQL's jsonb rejects that
+    character, and base64 keeps the bytes intact.
     """
     size = len(raw)
 
@@ -37,18 +40,34 @@ def normalize_payload(raw):
     try:
         text = raw.decode('utf-8')
     except UnicodeDecodeError:
-        return {'raw_base64': base64.b64encode(raw).decode('ascii'), 'size': size}, 'binary'
+        return _binary(raw)
 
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
-        return {'text': text}, 'text'
+        payload, payload_format = {'text': text}, 'text'
+    else:
+        if isinstance(parsed, dict):
+            payload, payload_format = parsed, 'json'
+        elif isinstance(parsed, list):
+            payload, payload_format = {'items': parsed}, 'json_array'
+        else:
+            payload, payload_format = {'value': parsed}, 'json_scalar'
 
-    if isinstance(parsed, dict):
-        return parsed, 'json'
-    if isinstance(parsed, list):
-        return {'items': parsed}, 'json_array'
-    return {'value': parsed}, 'json_scalar'
+    if _has_nul(payload):
+        return _binary(raw)
+    return payload, payload_format
+
+
+def _binary(raw):
+    return {'raw_base64': base64.b64encode(raw).decode('ascii'), 'size': len(raw)}, 'binary'
+
+
+def _has_nul(payload):
+    # json.dumps writes U+0000 as the escape \u0000. An escaped backslash
+    # followed by "u0000" matches too; that only sends the text as binary,
+    # which loses nothing.
+    return '\\u0000' in json.dumps(payload)
 
 
 def build_envelope(plugin_id, plugin_type, device, message_type, source_topic, raw, now=None):
