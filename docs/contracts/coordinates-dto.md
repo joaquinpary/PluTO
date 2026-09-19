@@ -211,6 +211,9 @@ En un `HOLD`, `t0_ms` no se usa y la placa lo ignora. El servidor igual lo compl
 el mismo valor que `t_sent_ms`. `t_sent_ms` sí se usa, como en cualquier mensaje, para
 medir la latencia.
 
+Un `HOLD` se aplica aunque el reloj no esté sincronizado (§6.4): detenerse nunca depende
+de la hora.
+
 ### 6.7 Ejecución de la trayectoria
 
 Un batch dice dónde tiene que estar la antena en cada instante. Esto es lo que hace la
@@ -396,13 +399,15 @@ que hace funcionar §6.7. Los números son valores de partida.
 
 ## 11. Pendiente de implementar
 
-- Firmware: el decoder (`components/coord_dto`), la ejecución de §6.7, la conversión a
-  pan-tilt de §9, y su conexión en `coordinates_message_handler` sobre el tópico de §2.
-- Servidor: el encoder y el dispatcher que hace de puente entre
-  `plugin/<plugin_uuid>/coordinates/polar` y `device/<device_id>/coordinates/polar`,
-  aplicando los límites del rotor.
-- El canal de vuelta: [`device-state.md`](device-state.md).
-- La tolerancia concreta de la regla 6.3, que depende de la dinámica de los motores.
+Ya están implementados el decoder, la ejecución de §6.7, la conversión a pan-tilt de §9,
+el encoder del servidor y el canal de vuelta. Se probaron contra una placa real
+([`device-state.md`](device-state.md) §8). Falta:
+
+- Servidor: el dispatcher que hace de puente entre `plugin/<plugin_uuid>/coordinates/polar`
+  y `device/<device_id>/coordinates/polar`, aplicando los límites del rotor.
+- Firmware: el driver de los servos, que toma los ángulos que ya calcula la placa.
+- La tolerancia concreta de la regla 6.3, que depende de la dinámica de los motores (hoy
+  es configurable, con 500 ms por defecto).
 - Vectores de prueba compartidos entre ambos repos: pendiente de decisión.
 
 ## 12. Historial
@@ -416,4 +421,5 @@ que hace funcionar §6.7. Los números son valores de partida.
   - marco de referencia, responsabilidades y pan-tilt (§9);
   - cadencia de envío del servidor (§10);
   - la conversión de azimut redondea antes de reducir módulo 36000 (§7.1);
-  - el canal de vuelta pasa a [`device-state.md`](device-state.md).
+  - el canal de vuelta pasa a [`device-state.md`](device-state.md);
+  - `HOLD` se aplica aunque el reloj no esté sincronizado (§6.6).
