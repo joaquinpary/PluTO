@@ -5,7 +5,11 @@ Este documento es la única fuente de verdad del formato: el decoder en C
 (`PluTO_esp32_firmware`) y el encoder en Python (`PluTO`) se implementan por separado
 contra lo que dice acá.
 
-Estado: **v1**, formato acordado, sin implementar en ninguno de los dos lados.
+Estado: **v1**, formato acordado. Revisado el 2026-09-19 (§12): se agregaron reglas de
+comportamiento y de validación, pero el formato en el cable no cambió.
+
+El canal de vuelta (lo que la placa informa al servidor) está en
+[`device-state.md`](device-state.md).
 
 ## 1. Propósito y alcance
 
@@ -81,6 +85,10 @@ de los dos lados.
 El instante objetivo del punto `i` es `t0_ms + dt_ms[i]`. El punto 0 normalmente lleva
 `dt_ms = 0`, pero no está obligado a hacerlo.
 
+Los rangos de `az_cdeg` y `el_cdeg` no son orientativos: el decoder rechaza el mensaje
+completo si un punto se sale de ellos (§6.1). Los dos ángulos son geográficos; qué
+significa eso y quién los convierte a ángulos de servo está en §9.
+
 ### 3.3 Para qué sirve cada campo del header
 
 - **`magic`** — primer byte fijo. Si algo publica JSON o basura en este tópico por error,
@@ -145,15 +153,22 @@ requieren cambiar `magic`.
 
 El decoder descarta el mensaje, lo loguea y sigue si se cumple cualquiera de estas:
 
+- `payload_len < 19`: no alcanza ni para el header
 - `magic != 0x50`
 - algún bit reservado de `flags` (bits 1-7) está seteado
 - `count > 16`
 - `count == 0` y `HOLD` no está seteado
+- `count > 0` y `HOLD` está seteado: un `HOLD` no lleva puntos (§6.6)
 - `payload_len != 19 + 8 * count`
+- algún punto con `az_cdeg > 35999`
+- algún punto con `el_cdeg < -9000` o `el_cdeg > 9000`
 
 Un mensaje inválido nunca aborta, nunca reinicia y nunca mueve la antena. La validación de
 largo es la que protege de leer fuera del buffer, así que va antes de tocar cualquier
-punto.
+punto. La de rangos va después, porque necesita leerlos.
+
+Cada rechazo tiene un código que la placa informa por el canal de vuelta
+([`device-state.md`](device-state.md) §5).
 
 ### 6.2 Alineación
 
@@ -173,7 +188,7 @@ mensaje completo.
 
 Si `sntp_manager_is_synced()` devuelve false, los timestamps del mensaje no son comparables
 con nada y toda la semántica temporal se cae. En ese caso el decoder **descarta el batch** y
-la placa reporta el estado del reloj.
+la placa reporta el estado del reloj (`clock_synced` en [`device-state.md`](device-state.md)).
 
 Se consideró la alternativa de ejecutar el último punto inmediatamente, como degradación
 "mejor esfuerzo". Queda descartada: sin reloj no hay forma de saber si ese punto tiene un
@@ -188,7 +203,30 @@ lado del servidor y se descarta completo en vez de intentar reordenarlo.
 ### 6.6 `HOLD`
 
 Con el bit 0 de `flags` seteado, el servidor pide detener el movimiento. El mensaje no
-lleva puntos (`count == 0`) y mide 19 bytes. La placa frena y se queda donde está.
+lleva puntos (`count == 0`) y mide 19 bytes. La placa frena, se queda donde está y
+**descarta los puntos que tenía pendientes**: un batch viejo no puede volver a moverla
+después de un `HOLD`.
+
+En un `HOLD`, `t0_ms` no se usa y la placa lo ignora. El servidor igual lo completa, con
+el mismo valor que `t_sent_ms`. `t_sent_ms` sí se usa, como en cualquier mensaje, para
+medir la latencia.
+
+### 6.7 Ejecución de la trayectoria
+
+Un batch dice dónde tiene que estar la antena en cada instante. Esto es lo que hace la
+placa entre un mensaje y el siguiente:
+
+- **Reemplazo.** Un batch aceptado reemplaza todos los puntos pendientes del anterior; no
+  se mezclan. El servidor siempre manda la trayectoria más fresca, y mezclar obligaría a
+  la placa a resolver orden y duplicados. El solapamiento entre batches consecutivos
+  (§10) no duplica nada por esto mismo.
+- **Antes del primer punto**, el objetivo es el primer punto: la placa arranca hacia él
+  apenas acepta el batch.
+- **Entre dos puntos**, interpola linealmente en el tiempo. El azimut toma el camino más
+  corto: de 359,50° a 0,50° pasa por 0°, no da la vuelta entera.
+- **Después del último punto** se queda en él. No extrapola: si no llega otro batch, la
+  antena se detiene, que es la forma segura de fallar.
+- **Un `HOLD`** descarta lo pendiente (§6.6).
 
 ## 7. Ejemplo trabajado
 
@@ -239,10 +277,21 @@ def encode(t0_ms, t_sent_ms, points, flags=0):
 Conversión desde los grados en coma flotante que produce el servidor:
 
 ```python
-az_cdeg = round(az_deg % 360.0 * 100)      # 0 .. 35999
+az_cdeg = round(az_deg * 100) % 36000      # 0 .. 35999
 el_cdeg = round(el_deg * 100)              # -9000 .. 9000
 t_ms = int(dt.timestamp() * 1000)          # dt debe ser timezone-aware en UTC
 ```
+
+El azimut se redondea **antes** de reducirlo módulo 36000. Al revés
+(`round(az_deg % 360.0 * 100)`, la versión inicial de este documento) cualquier azimut
+entre 359,995° y 360° da 36000, fuera de rango. Lo mismo pasa con negativos chicos como
+−0,001°:
+
+| `az_deg` | redondeando al final | redondeando primero |
+|---|---|---|
+| 359,994 | 35999 | 35999 |
+| 359,995 | **36000** | 0 |
+| −0,001 | **36000** | 0 |
 
 ### 7.2 Estructuras de referencia (C)
 
@@ -288,13 +337,83 @@ admite hasta 16, lo que daría 147 bytes. Si hacen falta ventanas de trayectoria
 el número a revisar es ese requisito —con un techo de 128 bytes entrarían 13 puntos—, no
 el layout.
 
-## 9. Pendiente de implementar
+## 9. Marco de referencia y quién hace qué
 
-- Decoder en el firmware: `components/coord_dto` con `coord_dto_decode()`, enganchado en
-  `coordinates_message_handler` de `main/main.c`.
-- Encoder y dispatcher en el servidor: el puente de
-  `plugin/<plugin_uuid>/coordinates/polar` a `device/<device_id>/coordinates/polar`.
+**Qué son `az` y `el`.** Son ángulos geográficos vistos desde la estación: el azimut se
+mide desde el norte verdadero en sentido horario y la elevación sobre el horizonte. Es
+exactamente lo que produce `services/coord_transform`. El mensaje nunca lleva ángulos de
+servo: la misma trayectoria sirve para cualquier montaje.
+
+**El servidor** aplica lo que configura el usuario:
+
+- los límites de apuntamiento del rotor y el umbral mínimo de elevación (issue #8 de
+  PluTO);
+- no manda puntos fuera de esos límites. Cuando el objetivo sale de ellos, por ejemplo
+  porque la pasada baja del umbral, corta la trayectoria y manda un `HOLD`.
+
+**La placa** convierte az/el geográficos a los ángulos de los dos servos del pan-tilt, de
+180° cada uno. Los dos modos juntos cubren todo el cielo: cada dirección con elevación
+positiva cae en al menos uno.
+
+| modo | pan | tilt |
+|---|---|---|
+| normal | `az − az_ref` | `el` |
+| invertido | `az − az_ref − 180°` | `180° − el` |
+
+- `az_ref` es el azimut geográfico hacia el que mira el pan en 0°, o sea la orientación
+  del montaje respecto del norte. Se calibra en la placa, igual que el cero del tilt.
+- El tilt va de 0° (horizonte hacia adelante) a 180° (horizonte hacia atrás), pasando por
+  el cenit en 90°. En modo invertido apunta por detrás del cenit.
+- La placa se queda en el modo actual mientras alcance el objetivo y cambia solo cuando
+  no puede.
+- Los límites de los servos son la última defensa. Si algún punto de un batch no se
+  alcanza en ningún modo, la placa rechaza el batch completo (error `unreachable` en
+  [`device-state.md`](device-state.md)) en vez de recortarlo. Con los límites del
+  servidor bien configurados, no debería pasar nunca.
+
+> **A tener en cuenta.** Si una trayectoria cruza el borde entre los dos modos
+> (`az = az_ref` o `az = az_ref + 180°`), la placa cambia de modo a mitad del seguimiento:
+> el pan gira 180°, el tilt se espeja y durante ese giro la antena no apunta al objetivo.
+> Se puede evitar más adelante si el servidor, que ve la pasada completa, elige el modo
+> para toda la trayectoria con un bit de `flags` (un cambio compatible, §5). No es parte
+> de v1.
+
+## 10. Envío desde el servidor
+
+Esta sección es orientativa: la placa no depende de ella, pero la cadencia de envío es lo
+que hace funcionar §6.7. Los números son valores de partida.
+
+- **Tamaño.** Cada batch lleva hasta 5 puntos (§8), un punto por segundo. Cuanto más
+  rápido se mueva el objetivo, más juntos van los puntos.
+- **Anticipación.** Cada batch se publica unos 2 s antes de su `t0_ms`. Alcanza para
+  absorber la latencia de transporte (≤ 500 ms por RNF-01.2) con margen.
+- **Solapamiento.** Cada batch nuevo arranca, como tarde, a la mitad del anterior: con 5
+  puntos, cada 2 puntos. Como el batch nuevo reemplaza lo pendiente (§6.7), el
+  solapamiento no duplica nada. Si se pierde un mensaje, la placa todavía tiene puntos
+  del anterior hasta que llega el siguiente.
+- **Fin.** Cuando termina la trayectoria o el objetivo sale de los límites del rotor, el
+  servidor manda un `HOLD` (§9).
+
+## 11. Pendiente de implementar
+
+- Firmware: el decoder (`components/coord_dto`), la ejecución de §6.7, la conversión a
+  pan-tilt de §9, y su conexión en `coordinates_message_handler` sobre el tópico de §2.
+- Servidor: el encoder y el dispatcher que hace de puente entre
+  `plugin/<plugin_uuid>/coordinates/polar` y `device/<device_id>/coordinates/polar`,
+  aplicando los límites del rotor.
+- El canal de vuelta: [`device-state.md`](device-state.md).
 - La tolerancia concreta de la regla 6.3, que depende de la dinámica de los motores.
-- Vectores de prueba compartidos entre ambos repos. Se decidió no hacerlos por ahora; si
-  aparece un desacuerdo de endianness o de escala entre las dos implementaciones, ése es el
-  momento de agregarlos.
+- Vectores de prueba compartidos entre ambos repos: pendiente de decisión.
+
+## 12. Historial
+
+- **v1**: formato inicial.
+- **v1, revisión 2026-09-19** (el formato en el cable no cambia):
+  - qué hace la placa entre mensajes: reemplazo, interpolación por el camino corto y
+    quedarse en el último punto (§6.7);
+  - `HOLD` descarta los puntos pendientes e ignora `t0_ms` (§6.6);
+  - validación de rangos, de largo mínimo y de `HOLD` con puntos (§6.1);
+  - marco de referencia, responsabilidades y pan-tilt (§9);
+  - cadencia de envío del servidor (§10);
+  - la conversión de azimut redondea antes de reducir módulo 36000 (§7.1);
+  - el canal de vuelta pasa a [`device-state.md`](device-state.md).
