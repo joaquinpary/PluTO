@@ -1,49 +1,7 @@
 import uuid
-import mongoengine
-from datetime import datetime
 
 from django.db import models
-
-class GenericJSONDocument(mongoengine.DynamicDocument):
-    """
-    A generic dynamic document designed to store arbitrary JSON data.
-    Because data is formatted as JSONs, DynamicDocument allows you to attach
-    any fields dynamically, or you can use the 'payload' DictField to store the entire JSON.
-    """
-    meta = {'abstract': True}
-    
-    # Optional metadata that might be useful for all JSONs
-    created_at = mongoengine.DateTimeField(default=datetime.utcnow)
-    
-    # Store the complete raw JSON data here, or attach attributes dynamically to the document
-    payload = mongoengine.DictField()
-
-class SystemSettings(GenericJSONDocument):
-    """Collection for system settings data"""
-    # contains the system configuration data for the whole system
-    # shall include the active plugins, base system settings (e.g. timezone),
-    # registered esp32's, etc
-    pass
-
-class Devices(GenericJSONDocument):
-    """Collection for devices data"""
-    # contains the geographical data corresponding to each esp32
-    # shall state the locations (lat, lon)
-    # shall state the name of the device
-    # shall state the id of the device
-    # shall contain the mqtt topics for each device
-    pass
-
-class CoordinatesSent(GenericJSONDocument):
-    """Collection for telemetry data"""
-    # contains a history of coordinates sent to each esp32
-    # each element should have az and el values
-    pass
-
-# PluginData now lives in services/mqtt_ingest/models.py: the ingester is its
-# only writer, so the schema belongs with it. When Django needs to read that
-# collection back (the HU-25 history views), lift it into a shared package
-# instead of redeclaring it here.
+from django.db.models.functions import Now
 
 class PluginInstance(models.Model):
     class Status(models.TextChoices):
@@ -85,3 +43,39 @@ class PluginInstance(models.Model):
             'lon': self.station_lon,
             'alt': self.station_alt,
         }
+
+class PluginData(models.Model):
+    """One row per message a plugin published on plugin/<plugin_uuid>/data/<type>.
+
+    Its only writer is the mqtt_ingest management command, which runs as its
+    own container from the server image.
+    """
+    # PROTECT: a plugin that already produced data is stopped, not deleted,
+    # so its history keeps pointing at a real instance.
+    plugin = models.ForeignKey(PluginInstance, on_delete=models.PROTECT, related_name='data')
+    device = models.TextField(blank=True)
+    message_type = models.CharField(max_length=32)
+
+    # How the plugin normalized the payload before publishing it
+    payload_format = models.TextField(default='json')
+    schema_version = models.PositiveSmallIntegerField(default=1)
+    payload = models.JSONField(default=dict)
+
+    # Tracing: message_id correlates the plugin log line with this row and lets
+    # the ingester drop QoS 1 redeliveries; received_at is when the plugin saw
+    # the message and created_at when it was persisted.
+    message_id = models.TextField(unique=True, null=True, blank=True)
+    source_topic = models.TextField(blank=True)
+    ingest_topic = models.TextField(blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(db_default=Now())
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['plugin', 'message_type', '-created_at']),
+            models.Index(fields=['device', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.plugin_id}/{self.message_type}#{self.pk}'

@@ -76,13 +76,11 @@ TEMPLATES = [
 WSGI_APPLICATION = 'pluto.wsgi.application'
 ASGI_APPLICATION = 'pluto.asgi.application'
 
-MONGO_CONFIG = {
-    'HOST': config('MONGO_HOST', default='mongodb'),
-    'PORT': config('MONGO_PORT', default=27017, cast=int),
-    'NAME': config('MONGO_DB', default='pluto'),
-    'USERNAME': config('MONGO_USERNAME', default=''),
-    'PASSWORD': config('MONGO_PASSWORD', default=''),
-    'AUTH_SOURCE': config('MONGO_AUTH_SOURCE', default='admin'),
+MQTT_CONFIG = {
+    'HOST': config('MQTT_HOST', default='mosquitto'),
+    'PORT': config('MQTT_PORT', default=1883, cast=int),
+    'USERNAME': config('MQTT_USERNAME', default=''),
+    'PASSWORD': config('MQTT_PASSWORD', default=''),
 }
 
 
@@ -91,8 +89,12 @@ MONGO_CONFIG = {
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'HOST': config('POSTGRES_HOST', default='postgres'),
+        'PORT': config('POSTGRES_PORT', default=5432, cast=int),
+        'NAME': config('POSTGRES_DB', default='pluto'),
+        'USER': config('POSTGRES_USER', default='pluto'),
+        'PASSWORD': config('POSTGRES_PASSWORD', default=''),
     }
 }
 
@@ -138,14 +140,3 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-import mongoengine
-
-mongoengine.connect(
-    db=MONGO_CONFIG['NAME'],
-    host=MONGO_CONFIG['HOST'],
-    port=MONGO_CONFIG['PORT'],
-    username=MONGO_CONFIG['USERNAME'] or None,
-    password=MONGO_CONFIG['PASSWORD'] or None,
-    authentication_source=MONGO_CONFIG['AUTH_SOURCE'] or None,
-)

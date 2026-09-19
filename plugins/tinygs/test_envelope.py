@@ -51,6 +51,22 @@ class NormalizePayloadTests(unittest.TestCase):
         self.assertEqual(payload["size"], MAX_PAYLOAD_BYTES + 1)
         self.assertEqual(len(base64.b64decode(payload["preview_base64"])), PREVIEW_BYTES)
 
+    def test_text_with_nul_goes_as_binary(self):
+        raw = b'RSSI:-97\x00SNR:-3'
+
+        payload, fmt = normalize_payload(raw)
+
+        self.assertEqual(fmt, "binary")
+        self.assertEqual(base64.b64decode(payload["raw_base64"]), raw)
+
+    def test_json_with_escaped_nul_goes_as_binary(self):
+        raw = b'{"data": "a\\u0000b"}'
+
+        payload, fmt = normalize_payload(raw)
+
+        self.assertEqual(fmt, "binary")
+        self.assertEqual(base64.b64decode(payload["raw_base64"]), raw)
+
     def test_result_is_always_a_dict(self):
         for raw in (b'{}', b'[]', b'42', b'texto', b'\xff', b'x' * (MAX_PAYLOAD_BYTES + 1)):
             payload, _ = normalize_payload(raw)

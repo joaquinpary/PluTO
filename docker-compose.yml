@@ -2,12 +2,11 @@ x-django-env: &django-env
   SECRET_KEY: ${SECRET_KEY:-change-me}
   DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
-  MONGO_HOST: mongodb
-  MONGO_PORT: 27017
-  MONGO_DB: ${MONGO_DB:-pluto}
-  MONGO_USERNAME: ${MONGO_USERNAME:-}
-  MONGO_PASSWORD: ${MONGO_PASSWORD:-}
-  MONGO_AUTH_SOURCE: ${MONGO_AUTH_SOURCE:-admin}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: ${POSTGRES_DB:-pluto}
+  POSTGRES_USER: ${POSTGRES_USER:-pluto}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
   MQTT_HOST: mosquitto
   MQTT_PORT: 1883
   MQTT_USERNAME: ${MQTT_USERNAME:-pluto}
@@ -19,11 +18,14 @@ services:
       context: .
       dockerfile: Dockerfile
     image: pluto/server:latest
-    command: python manage.py runserver 0.0.0.0:8000
+    # Migrating on start is what creates plugin_data, which mqtt_ingest waits for.
+    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
     environment: *django-env
     depends_on:
-      - mongodb
-      - mosquitto
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
     ports:
       - "8000:8000"
     volumes:
@@ -33,26 +35,22 @@ services:
       - pluto-network
       - docker-proxy
 
+  # Same image and code as the server, run as a second process: the MQTT loop
+  # can't live inside runserver, whose autoreloader would run it twice.
   mqtt_ingest:
     build:
-      context: ./services/mqtt_ingest
+      context: .
       dockerfile: Dockerfile
-    environment:
-      MQTT_BROKER_URL: mosquitto
-      MQTT_BROKER_PORT: 1883
-      MQTT_USERNAME: ${MQTT_USERNAME:-pluto}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-change-me}
-      MONGO_HOST: mongodb
-      MONGO_PORT: 27017
-      MONGO_DB: ${MONGO_DB:-pluto}
-      MONGO_USERNAME: ${MONGO_USERNAME:-}
-      MONGO_PASSWORD: ${MONGO_PASSWORD:-}
-      MONGO_AUTH_SOURCE: ${MONGO_AUTH_SOURCE:-admin}
+    image: pluto/server:latest
+    command: python manage.py mqtt_ingest
+    environment: *django-env
     volumes:
-      - ./services/mqtt_ingest:/app
+      - .:/app
     depends_on:
-      - mongodb
-      - mosquitto
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
     restart: unless-stopped
     networks:
       - pluto-network
@@ -74,15 +72,21 @@ services:
     networks:
       - pluto-network
 
-  mongodb:
-    image: mongo:7
+  postgres:
+    image: postgres:17-alpine
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-admin}
-    ports:
-      - "27017:27017"
+      POSTGRES_DB: ${POSTGRES_DB:-pluto}
+      POSTGRES_USER: ${POSTGRES_USER:-pluto}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    # No published port: services reach it on pluto-network. For a shell use
+    #   docker compose exec postgres psql -U pluto pluto
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     volumes:
-      - mongo-data:/data/db
+      - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
       - pluto-network
@@ -118,7 +122,7 @@ services:
       - docker-proxy
 
 volumes:
-  mongo-data:
+  postgres-data:
 networks:
   pluto-network:
     name: pluto-network

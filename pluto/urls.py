@@ -14,37 +14,24 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.conf import settings
 from django.contrib import admin
+from django.db import DatabaseError, connection
 from django.http import JsonResponse
 from django.urls import path
-from pymongo import MongoClient
-from pymongo.errors import PyMongoError
-
-mongo_client = MongoClient(
-    host=settings.MONGO_CONFIG['HOST'],
-    port=settings.MONGO_CONFIG['PORT'],
-    username=settings.MONGO_CONFIG['USERNAME'] or None,
-    password=settings.MONGO_CONFIG['PASSWORD'] or None,
-    authSource=settings.MONGO_CONFIG['AUTH_SOURCE'] or None,
-    serverSelectionTimeoutMS=1000,
-)
 
 
 def healthcheck(_request):
-    mongo_status = 'unreachable'
-
     try:
-        # 'dbStats' (unlike 'ping') requires authentication, so a credentials
-        # mismatch shows up here instead of silently reporting a healthy Mongo.
-        mongo_client[settings.MONGO_CONFIG['NAME']].command('dbStats')
-        mongo_status = 'ok'
-    except PyMongoError:
+        # Opening the connection authenticates, so a credentials mismatch
+        # shows up here instead of silently reporting a healthy database.
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+    except DatabaseError:
         return JsonResponse(
             {
                 'status': 'degraded',
                 'service': 'pluto-backend',
-                'mongodb': mongo_status,
+                'database': 'unreachable',
             },
             status=503,
         )
@@ -53,7 +40,7 @@ def healthcheck(_request):
         {
             'status': 'ok',
             'service': 'pluto-backend',
-            'mongodb': mongo_status,
+            'database': 'ok',
         }
     )
 
