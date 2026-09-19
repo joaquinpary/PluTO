@@ -82,6 +82,7 @@ MONGO_CONFIG = {
     'NAME': config('MONGO_DB', default='pluto'),
     'USERNAME': config('MONGO_USERNAME', default=''),
     'PASSWORD': config('MONGO_PASSWORD', default=''),
+    'AUTH_SOURCE': config('MONGO_AUTH_SOURCE', default='admin'),
 }
 
 
@@ -144,6 +145,7 @@ mongoengine.connect(
     db=MONGO_CONFIG['NAME'],
     host=MONGO_CONFIG['HOST'],
     port=MONGO_CONFIG['PORT'],
-    username=MONGO_CONFIG['USERNAME'],
-    password=MONGO_CONFIG['PASSWORD'],
+    username=MONGO_CONFIG['USERNAME'] or None,
+    password=MONGO_CONFIG['PASSWORD'] or None,
+    authentication_source=MONGO_CONFIG['AUTH_SOURCE'] or None,
 )

@@ -26,6 +26,7 @@ mongo_client = MongoClient(
     port=settings.MONGO_CONFIG['PORT'],
     username=settings.MONGO_CONFIG['USERNAME'] or None,
     password=settings.MONGO_CONFIG['PASSWORD'] or None,
+    authSource=settings.MONGO_CONFIG['AUTH_SOURCE'] or None,
     serverSelectionTimeoutMS=1000,
 )
 
@@ -34,7 +35,9 @@ def healthcheck(_request):
     mongo_status = 'unreachable'
 
     try:
-        mongo_client.admin.command('ping')
+        # 'dbStats' (unlike 'ping') requires authentication, so a credentials
+        # mismatch shows up here instead of silently reporting a healthy Mongo.
+        mongo_client[settings.MONGO_CONFIG['NAME']].command('dbStats')
         mongo_status = 'ok'
     except PyMongoError:
         return JsonResponse(

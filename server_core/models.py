@@ -40,11 +40,10 @@ class CoordinatesSent(GenericJSONDocument):
     # each element should have az and el values
     pass
 
-class PluginData(GenericJSONDocument):
-    """Collection for plugin data"""
-    # contains data from all plugins organized through a plugin_id field
-    # could also use a "collection" field for each plugin
-    pass
+# PluginData now lives in services/mqtt_ingest/models.py: the ingester is its
+# only writer, so the schema belongs with it. When Django needs to read that
+# collection back (the HU-25 history views), lift it into a shared package
+# instead of redeclaring it here.
 
 class PluginInstance(models.Model):
     class Status(models.TextChoices):
