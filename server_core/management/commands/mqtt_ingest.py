@@ -1,4 +1,4 @@
-"""Subscribes to the plugin data topics and persists every message into PostgreSQL.
+"""Subscribes to the plugin and device topics and persists every message into PostgreSQL.
 
 Runs as its own container from the server image (see the `mqtt_ingest` service
 in docker-compose.yml) rather than inside the Django server: `loop_forever()`
@@ -21,11 +21,19 @@ from django.core.management.base import BaseCommand
 from django.db import DatabaseError, IntegrityError, close_old_connections, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 
+from server_core.device_state import (
+    DEVICE_STATE_TOPIC,
+    DEVICE_STATUS_TOPIC,
+    parse_device_topic,
+    store_state,
+    store_status,
+)
 from server_core.models import PluginData, PluginInstance
 
 logger = logging.getLogger(__name__)
 
 INGEST_TOPIC = 'plugin/+/data/+'
+DEFAULT_TOPICS = (INGEST_TOPIC, DEVICE_STATUS_TOPIC, DEVICE_STATE_TOPIC)
 MESSAGE_TYPE_RE = re.compile(r'^[a-z0-9_-]{1,32}$')
 
 INGESTED = 'ingested'
@@ -179,10 +187,15 @@ def wait_for_migrations(delay=2.0, sleep=time.sleep):
 
 
 class Command(BaseCommand):
-    help = 'Subscribes to plugin data topics and persists the messages into PostgreSQL.'
+    help = 'Subscribes to plugin data and device topics and persists the messages into PostgreSQL.'
 
     def add_arguments(self, parser):
-        parser.add_argument('--topic', default=INGEST_TOPIC, help='Topic filter to subscribe to.')
+        parser.add_argument(
+            '--topic',
+            action='append',
+            dest='topics',
+            help='Topic filter to subscribe to; repeat it for several. Defaults to all of them.',
+        )
         parser.add_argument('--qos', type=int, default=1, help='Subscription QoS.')
         parser.add_argument('--host', default=None, help='Overrides MQTT_HOST.')
         parser.add_argument('--port', type=int, default=None, help='Overrides MQTT_PORT.')
@@ -197,9 +210,9 @@ class Command(BaseCommand):
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         )
 
-        self.topic = options['topic']
+        self.topics = options['topics'] or list(DEFAULT_TOPICS)
         self.qos = options['qos']
-        self.stats = {'ingested': 0, 'duplicate': 0, 'rejected': 0, 'failed': 0}
+        self.stats = {'ingested': 0, 'duplicate': 0, 'device_updates': 0, 'rejected': 0, 'failed': 0}
 
         wait_for_migrations()
 
@@ -248,8 +261,8 @@ class Command(BaseCommand):
         logger.info('Connected to MQTT broker successfully.')
         # Subscribing here means the subscription comes back on its own after a
         # broker restart.
-        client.subscribe(self.topic, qos=self.qos)
-        logger.info('Subscribed to %s with qos=%s', self.topic, self.qos)
+        client.subscribe([(topic, self.qos) for topic in self.topics])
+        logger.info('Subscribed to %s with qos=%s', ', '.join(self.topics), self.qos)
 
     def on_disconnect(self, client, userdata, flags, reason_code, properties=None):
         if reason_code != 0:
@@ -257,29 +270,10 @@ class Command(BaseCommand):
 
     def on_message(self, client, userdata, msg):
         try:
-            fields = build_document_fields(msg.topic, msg.payload)
-            if fields is None:
-                self.stats['rejected'] += 1
-                return
-
-            # What Django does before every request: drop a connection that is
-            # stale or died (PostgreSQL restarted), so the query opens a fresh one.
-            close_old_connections()
-
-            outcome = store_message(fields)
-            if outcome == UNKNOWN_PLUGIN:
-                self.stats['rejected'] += 1
-                logger.warning('Ignoring message on %s: no plugin instance with that uuid', msg.topic)
-            elif outcome == DUPLICATE:
-                self.stats['duplicate'] += 1
-                logger.info('Skipping redelivered message %s on %s', fields.get('message_id'), msg.topic)
+            if msg.topic.startswith('device/'):
+                self._handle_device_message(msg)
             else:
-                self.stats['ingested'] += 1
-                logger.info(
-                    '[%s] plugin=%s device=%s format=%s id=%s',
-                    fields['message_type'], fields['plugin_id'],
-                    fields.get('device'), fields.get('payload_format'), fields.get('message_id'),
-                )
+                self._handle_plugin_data(msg)
         except DatabaseError as exc:
             self.stats['failed'] += 1
             logger.error('Could not persist message from %s: %s', msg.topic, exc)
@@ -290,3 +284,45 @@ class Command(BaseCommand):
         total = sum(self.stats.values())
         if total and total % 100 == 0:
             logger.info('Stats: %s', self.stats)
+
+    def _handle_plugin_data(self, msg):
+        fields = build_document_fields(msg.topic, msg.payload)
+        if fields is None:
+            self.stats['rejected'] += 1
+            return
+
+        # What Django does before every request: drop a connection that is
+        # stale or died (PostgreSQL restarted), so the query opens a fresh one.
+        close_old_connections()
+
+        outcome = store_message(fields)
+        if outcome == UNKNOWN_PLUGIN:
+            self.stats['rejected'] += 1
+            logger.warning('Ignoring message on %s: no plugin instance with that uuid', msg.topic)
+        elif outcome == DUPLICATE:
+            self.stats['duplicate'] += 1
+            logger.info('Skipping redelivered message %s on %s', fields.get('message_id'), msg.topic)
+        else:
+            self.stats['ingested'] += 1
+            logger.info(
+                '[%s] plugin=%s device=%s format=%s id=%s',
+                fields['message_type'], fields['plugin_id'],
+                fields.get('device'), fields.get('payload_format'), fields.get('message_id'),
+            )
+
+    def _handle_device_message(self, msg):
+        parsed = parse_device_topic(msg.topic)
+        if parsed is None:
+            self.stats['rejected'] += 1
+            logger.warning('Ignoring message on unexpected device topic %s', msg.topic)
+            return
+
+        device_id, leaf = parsed
+        close_old_connections()
+
+        stored = store_status(device_id, msg.payload) if leaf == 'status' else store_state(device_id, msg.payload)
+        if stored:
+            self.stats['device_updates'] += 1
+            logger.debug('[%s] device=%s stored', leaf, device_id)
+        else:
+            self.stats['rejected'] += 1

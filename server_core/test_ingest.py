@@ -7,7 +7,9 @@ from django.core.management import call_command
 from django.db import OperationalError
 from django.test import SimpleTestCase, TestCase, override_settings
 
+from .device_state import DEVICE_STATE_TOPIC, DEVICE_STATUS_TOPIC
 from .management.commands.mqtt_ingest import (
+    DEFAULT_TOPICS,
     DUPLICATE,
     INGEST_TOPIC,
     INGESTED,
@@ -194,7 +196,7 @@ class MessageHandlingTests(TestCase):
     def setUp(self):
         self.plugin = PluginInstance.objects.create(name='tinygs-1', plugin_type='tinygs')
         self.command = Command()
-        self.command.stats = {'ingested': 0, 'duplicate': 0, 'rejected': 0, 'failed': 0}
+        self.command.stats = {'ingested': 0, 'duplicate': 0, 'device_updates': 0, 'rejected': 0, 'failed': 0}
 
     def message(self, topic=None, payload=None):
         topic = topic or f'plugin/{self.plugin.plugin_uuid}/data/tracking'
@@ -271,12 +273,12 @@ class WaitForMigrationsTests(SimpleTestCase):
 
 @override_settings(MQTT_CONFIG={'HOST': 'broker', 'PORT': 1884, 'USERNAME': 'u', 'PASSWORD': 'p'})
 class CommandTests(SimpleTestCase):
-    def run_command(self, **options):
+    def run_command(self, *args, command='mqtt_ingest'):
         with patch(f'{MODULE}.mqtt.Client') as client_cls, \
                 patch(f'{MODULE}.wait_for_migrations') as wait, \
                 patch(f'{MODULE}.signal.signal'), \
                 patch(f'{MODULE}.logging.basicConfig'):
-            call_command('mqtt_ingest', **options)
+            call_command(command, *args)
         return client_cls.return_value, wait
 
     def test_waits_for_migrations_then_connects_with_credentials(self):
@@ -286,18 +288,34 @@ class CommandTests(SimpleTestCase):
         paho.username_pw_set.assert_called_once_with('u', 'p')
         paho.connect.assert_called_once_with('broker', 1884, 60)
 
-    def test_subscribes_to_wildcard_topic_on_connect(self):
+    def test_subscribes_to_plugin_and_device_topics_on_connect(self):
         command = Command()
-        command.topic, command.qos = INGEST_TOPIC, 1
+        command.topics, command.qos = list(DEFAULT_TOPICS), 1
         paho = MagicMock()
 
         command.on_connect(paho, None, None, 0)
 
-        paho.subscribe.assert_called_once_with(INGEST_TOPIC, qos=1)
+        paho.subscribe.assert_called_once_with(
+            [(INGEST_TOPIC, 1), (DEVICE_STATUS_TOPIC, 1), (DEVICE_STATE_TOPIC, 1)]
+        )
+
+    def test_subscribes_to_every_topic_by_default(self):
+        command = Command()
+
+        self.run_command(command=command)
+
+        self.assertEqual(command.topics, list(DEFAULT_TOPICS))
+
+    def test_topic_option_replaces_the_defaults(self):
+        command = Command()
+
+        self.run_command('--topic', INGEST_TOPIC, '--topic', DEVICE_STATE_TOPIC, command=command)
+
+        self.assertEqual(command.topics, [INGEST_TOPIC, DEVICE_STATE_TOPIC])
 
     def test_does_not_subscribe_when_connection_fails(self):
         command = Command()
-        command.topic, command.qos = INGEST_TOPIC, 1
+        command.topics, command.qos = list(DEFAULT_TOPICS), 1
         paho = MagicMock()
 
         with self.assertLogs(LOGGER, level='ERROR'):

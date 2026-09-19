@@ -1,6 +1,6 @@
 from django.contrib import admin, messages
 
-from .models import PluginInstance
+from .models import PluginInstance, Rotor, RotorState
 from .orchestrator import PluginOrchestrator
 
 
@@ -256,3 +256,31 @@ class PluginInstanceAdmin(admin.ModelAdmin):
 
         if synced:
             self.message_user(request, f'Synced {synced} plugin status value(s).', level=messages.SUCCESS)
+
+
+@admin.register(Rotor)
+class RotorAdmin(admin.ModelAdmin):
+    list_display = ('device_id', 'name', 'online', 'status_changed_at', 'last_state_at')
+    list_filter = ('online',)
+    search_fields = ('device_id', 'name')
+    readonly_fields = ('device_id', 'online', 'status_changed_at', 'last_state_at', 'created_at')
+
+    def has_add_permission(self, request):
+        # Boards register themselves the first time they report on MQTT.
+        return False
+
+
+@admin.register(RotorState)
+class RotorStateAdmin(admin.ModelAdmin):
+    list_display = (
+        'received_at', 'rotor', 'mode', 'az_cdeg', 'el_cdeg', 'pan_mode',
+        'batch_accepted', 'batch_error', 'latency_ms', 'clock_synced',
+    )
+    list_filter = ('rotor', 'mode', 'batch_accepted')
+
+    # A history reported by the boards: nothing to add or edit by hand.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
