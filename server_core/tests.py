@@ -104,6 +104,47 @@ class TinyGSHandlerTests(SimpleTestCase):
 
 		self.assertEqual(environment['TINYGS_DEVICE'], 'heltec-lp-01')
 
+	def test_pass_settings_are_optional(self):
+		self.assertIsNone(self.handler.validate({'tinygs_device': 'My_TinyGS'}))
+
+	def test_valid_pass_settings_are_accepted(self):
+		config = {
+			'tinygs_device': 'My_TinyGS',
+			'tinygs_topic_prefix': 'pluto',
+			'min_elevation_deg': 15,
+			'lookahead_minutes': 20,
+			'sample_seconds': 1,
+			'tle_ttl_hours': 12.5,
+		}
+
+		self.assertIsNone(self.handler.validate(config))
+
+	def test_impossible_pass_settings_are_rejected(self):
+		for key, value in (
+			('min_elevation_deg', 91),
+			('min_elevation_deg', -91),
+			('lookahead_minutes', 0),
+			('sample_seconds', -1),
+			('tle_ttl_hours', 0),
+			('sample_seconds', '1'),
+			('lookahead_minutes', True),
+		):
+			with self.subTest(key=key, value=value):
+				self.assertIsNotNone(self.handler.validate({'tinygs_device': 'My_TinyGS', key: value}))
+
+	def test_topic_prefix_must_be_a_single_segment(self):
+		for prefix in ('', 'pluto/extra', '+', '#'):
+			with self.subTest(prefix=prefix):
+				self.assertIsNotNone(self.handler.validate({'tinygs_device': 'My_TinyGS', 'tinygs_topic_prefix': prefix}))
+
+	def test_pass_settings_reach_the_container_upper_cased(self):
+		environment = self.handler.get_environment({
+			'tinygs_device': 'My_TinyGS', 'min_elevation_deg': 15, 'lookahead_minutes': 20,
+		})
+
+		self.assertEqual(environment['MIN_ELEVATION_DEG'], '15')
+		self.assertEqual(environment['LOOKAHEAD_MINUTES'], '20')
+
 
 class PluginDataTests(TestCase):
 	def setUp(self):
