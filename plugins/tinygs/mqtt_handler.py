@@ -16,7 +16,8 @@ class TinyGSMQTTClient:
     """
 
     def __init__(self, broker_url, broker_port, device_id, plugin_id, plugin_type,
-                 publish_topic_base, username=None, password=None, qos=1):
+                 publish_topic_base, username=None, password=None, qos=1,
+                 topic_prefix="pluto", tracker=None):
         self.broker_url = broker_url
         self.broker_port = broker_port
         self.device_id = device_id
@@ -24,8 +25,13 @@ class TinyGSMQTTClient:
         self.plugin_type = plugin_type
         self.publish_topic_base = publish_topic_base.rstrip("/")
         self.qos = qos
-        self.tracking_topic = f"pluto/{device_id}/tracking"
-        self.rx_topic = f"pluto/{device_id}/rx"
+        # The prefix is configurable on the station itself, so it is a setting
+        # here too rather than a literal.
+        self.tracking_topic = f"{topic_prefix}/{device_id}/tracking"
+        self.rx_topic = f"{topic_prefix}/{device_id}/rx"
+        # Turns the satellite named in each tracking message into a pass. None
+        # keeps the plugin a pure republisher, which is what its tests build.
+        self.tracker = tracker
         # A stable client_id makes a duplicated container visible: the broker
         # kicks the other one out instead of silently doubling every message.
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"tinygs-{plugin_id}")
@@ -79,5 +85,27 @@ class TinyGSMQTTClient:
                 len(msg.payload), envelope["message_id"], result.mid,
             )
             logger.debug("envelope: %s", envelope)
+
+            if message_type == "tracking" and self.tracker is not None:
+                self._feed_tracker(msg.payload)
         except Exception:
-            logger.exception("Failed to republish message from %s", msg.topic)
+            logger.exception("Failed to handle message from %s", msg.topic)
+
+    def _feed_tracker(self, raw):
+        # A payload that is not a JSON object still got republished above: the
+        # envelope knows how to carry text and binary. Only the tracker needs to
+        # read it, and it has nothing to follow in one it cannot read.
+        try:
+            document = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            logger.warning("tracking payload is not JSON, no pass to compute")
+            return
+
+        self.tracker.on_tracking(document)
+
+    def publish_coordinates(self, topic, payload):
+        """Publish a pass. Called from the tracker's thread; paho's publish is safe there."""
+        # QoS 1, like file_tracker: a lost pass shows up as an antenna that never
+        # moves, the most expensive symptom there is to diagnose.
+        result = self.client.publish(topic, payload, qos=1)
+        logger.info("Pass queued for %s (%s bytes, mid=%s)", topic, len(payload), result.mid)
