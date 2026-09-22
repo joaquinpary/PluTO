@@ -55,6 +55,27 @@ services:
     networks:
       - pluto-network
 
+  # The other half of the MQTT core: turns the plugins' trajectories into the
+  # binary batches the board executes. Separate process from the ingester so a
+  # slow database write on one side never delays the other's setpoints.
+  mqtt_dispatch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pluto/server:latest
+    command: python manage.py mqtt_dispatch
+    environment: *django-env
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - pluto-network
+
   coord_transform:
     build:
       context: ./services/coord_transform
