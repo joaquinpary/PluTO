@@ -1,1 +1,6 @@
 paho-mqtt==2.1.0
+skyfield==1.55
+# Pinned although skyfield already pulls it: its find_events sets an array's
+# dtype in place, which numpy 2.5 deprecates. Unpinned, the numpy release that
+# turns that into an error would break the pass search with no change here.
+numpy==2.5.3
