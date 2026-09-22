@@ -400,11 +400,14 @@ que hace funcionar §6.7. Los números son valores de partida.
 ## 11. Pendiente de implementar
 
 Ya están implementados el decoder, la ejecución de §6.7, la conversión a pan-tilt de §9,
-el encoder del servidor y el canal de vuelta. Se probaron contra una placa real
-([`device-state.md`](device-state.md) §8). Falta:
+el encoder del servidor y el canal de vuelta; se probaron contra una placa real
+([`device-state.md`](device-state.md) §8). También está implementado el dispatcher del
+servidor —el comando `mqtt_dispatch`, que hace de puente entre
+`plugin/<plugin_uuid>/coordinates/polar` y `device/<device_id>/coordinates/polar` aplicando
+los límites del rotor—, pero todavía no se corrió contra la placa. Falta:
 
-- Servidor: el dispatcher que hace de puente entre `plugin/<plugin_uuid>/coordinates/polar`
-  y `device/<device_id>/coordinates/polar`, aplicando los límites del rotor.
+- Servidor: probar el dispatcher de punta a punta contra el hardware. Por ahora tiene sus
+  tests contra un PostgreSQL real, nada más.
 - Firmware: el driver de los servos, que toma los ángulos que ya calcula la placa.
 - La tolerancia concreta de la regla 6.3, que depende de la dinámica de los motores (hoy
   es configurable, con 500 ms por defecto).
@@ -412,6 +415,8 @@ el encoder del servidor y el canal de vuelta. Se probaron contra una placa real
 
 ## 12. Historial
 
+- **v1, 2026-09-22** (el formato en el cable no cambia): el dispatcher del servidor pasa de
+  pendiente a implementado en §11, a la espera de la prueba contra la placa.
 - **v1**: formato inicial.
 - **v1, revisión 2026-09-19** (el formato en el cable no cambia):
   - qué hace la placa entre mensajes: reemplazo, interpolación por el camino corto y
