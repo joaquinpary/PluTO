@@ -11,15 +11,13 @@ import logging
 import os
 import re
 import signal
-import time
 import uuid
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from django.db import DatabaseError, IntegrityError, close_old_connections, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
+from django.db import DatabaseError, IntegrityError, close_old_connections, transaction
 
 from server_core.device_state import (
     DEVICE_STATE_TOPIC,
@@ -29,6 +27,7 @@ from server_core.device_state import (
     store_status,
 )
 from server_core.models import PluginData, PluginInstance
+from server_core.mqtt_runtime import wait_for_migrations
 
 logger = logging.getLogger(__name__)
 
@@ -165,25 +164,6 @@ def store_message(fields):
         raise
 
     return INGESTED
-
-
-def wait_for_migrations(delay=2.0, sleep=time.sleep):
-    """Block until PostgreSQL answers and every migration is applied.
-
-    The server container runs `migrate` on start; consuming MQTT before that
-    would only turn every message into a failure.
-    """
-    while True:
-        try:
-            executor = MigrationExecutor(connection)
-            if not executor.migration_plan(executor.loader.graph.leaf_nodes()):
-                logger.info('PostgreSQL ready and migrations applied')
-                return
-            logger.info('Waiting for the server to apply the migrations...')
-        except DatabaseError as exc:
-            logger.info('Waiting for PostgreSQL: %s', exc)
-            connection.close()
-        sleep(delay)
 
 
 class Command(BaseCommand):

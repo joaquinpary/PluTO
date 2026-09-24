@@ -1,13 +1,13 @@
 from django.contrib import admin, messages
 
-from .models import PluginInstance, Rotor, RotorState
+from .models import DispatchOrder, PluginInstance, Rotor, RotorState
 from .orchestrator import PluginOrchestrator
 
 
 @admin.register(PluginInstance)
 class PluginInstanceAdmin(admin.ModelAdmin):
     actions = ['launch_selected_plugins', 'stop_selected_plugins', 'sync_container_statuses']
-    list_display  = ('name', 'plugin_type', 'status', 'runtime_status', 'container_id', 'updated_at')
+    list_display  = ('name', 'plugin_type', 'status', 'runtime_status', 'rotor', 'container_id', 'updated_at')
     list_filter   = ('plugin_type', 'status')
     search_fields = ('name', 'container_id')
     readonly_fields = ('runtime_status', 'container_id', 'created_at', 'updated_at')
@@ -20,6 +20,18 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         (
             'Ground Station',
             {'fields': ('station_lat', 'station_lon', 'station_alt')},
+        ),
+        (
+            'Rotor',
+            {
+                'fields': ('rotor',),
+                'description': (
+                    'The rotor this instance points while it runs. Leave it empty for a '
+                    'plugin that only produces data. A rotor is driven by one running '
+                    'instance at a time, so assigning it here is what gives this plugin '
+                    'exclusive control of the motors.'
+                ),
+            },
         ),
         (
             'Plugin Configuration',
@@ -47,6 +59,18 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         (
             'Ground Station',
             {'fields': ('station_lat', 'station_lon', 'station_alt')},
+        ),
+        (
+            'Rotor',
+            {
+                'fields': ('rotor',),
+                'description': (
+                    'The rotor this instance points while it runs. Leave it empty for a '
+                    'plugin that only produces data. A rotor is driven by one running '
+                    'instance at a time, so assigning it here is what gives this plugin '
+                    'exclusive control of the motors.'
+                ),
+            },
         ),
         (
             'Plugin Configuration',
@@ -260,10 +284,29 @@ class PluginInstanceAdmin(admin.ModelAdmin):
 
 @admin.register(Rotor)
 class RotorAdmin(admin.ModelAdmin):
-    list_display = ('device_id', 'name', 'online', 'status_changed_at', 'last_state_at')
+    list_display = ('device_id', 'name', 'online', 'min_elevation_deg', 'status_changed_at', 'last_state_at')
     list_filter = ('online',)
     search_fields = ('device_id', 'name')
     readonly_fields = ('device_id', 'online', 'status_changed_at', 'last_state_at', 'created_at')
+
+    fieldsets = [
+        (
+            None,
+            {'fields': ('device_id', 'name', 'online', 'status_changed_at', 'last_state_at', 'created_at')},
+        ),
+        (
+            'Pointing limits',
+            {
+                'fields': ('min_elevation_deg', 'min_azimuth_deg', 'max_azimuth_deg'),
+                'description': (
+                    'The dispatcher cuts a trajectory and sends HOLD as soon as a point '
+                    'falls outside these. Leave both azimuth fields empty for no azimuth '
+                    'restriction; a start above the end wraps through north, e.g. 300 to 60. '
+                    'The board keeps its own servo limits as the last line of defence.'
+                ),
+            },
+        ),
+    ]
 
     def has_add_permission(self, request):
         # Boards register themselves the first time they report on MQTT.
@@ -279,6 +322,19 @@ class RotorStateAdmin(admin.ModelAdmin):
     list_filter = ('rotor', 'mode', 'batch_accepted')
 
     # A history reported by the boards: nothing to add or edit by hand.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(DispatchOrder)
+class DispatchOrderAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'rotor', 'plugin', 'kind', 'reason', 't0_ms', 't_end_ms', 't_sent_ms')
+    list_filter = ('rotor', 'kind', 'reason')
+
+    # What the dispatcher put on the wire: nothing to add or edit by hand.
     def has_add_permission(self, request):
         return False
 

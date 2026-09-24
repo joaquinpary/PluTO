@@ -66,7 +66,10 @@ class CoordinateTransformMQTTClient:
             # Publicar
             out_topic = f"plugin/{instance_id}/coordinates/polar"
             out_json = polar_payload.model_dump_json()
-            client.publish(out_topic, out_json)
+            # QoS 1: mqtt_dispatch is the only consumer and losing a whole
+            # trajectory shows up as "nothing happens", which is the most
+            # expensive symptom to diagnose.
+            client.publish(out_topic, out_json, qos=1)
             logger.info(f"Successfully transformed and published {len(polar_points)} points to {out_topic}")
             
         except ValidationError as e:
