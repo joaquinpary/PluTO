@@ -116,8 +116,15 @@ class PluginOrchestrator:
 
         mqtt_topic = f"plugin/{instance_id}/coordinates/raw"
 
+        # The same broker settings the server uses. Without the credentials a
+        # plugin falls back to its built-in defaults, and the broker refuses
+        # anonymous clients, so changing MQTT_PASSWORD silently cut them all off.
+        mqtt_config = settings.MQTT_CONFIG
         environment = {
-            "MQTT_BROKER_URL": os.environ.get("MQTT_BROKER", "mosquitto"),
+            "MQTT_BROKER_URL": mqtt_config["HOST"],
+            "MQTT_BROKER_PORT": str(mqtt_config["PORT"]),
+            "MQTT_USERNAME": mqtt_config["USERNAME"],
+            "MQTT_PASSWORD": mqtt_config["PASSWORD"],
             "MQTT_PUBLISH_TOPIC": mqtt_topic,
             "INSTANCE_ID": str(instance_id),
             "STATION_COORDINATES": json.dumps(normalized_station),
