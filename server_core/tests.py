@@ -96,6 +96,21 @@ class TinyGSHandlerTests(SimpleTestCase):
 		for device in ('+', '#', 'heltec/lp-01'):
 			self.assertIsNotNone(self.handler.validate({'tinygs_device': device}))
 
+	def test_validate_rejects_names_that_are_not_slugs(self):
+		for device in ('Estacion Cordoba', 'estación', 'a.b', 'a b'):
+			with self.subTest(device=device):
+				self.assertIsNotNone(self.handler.validate({'tinygs_device': device}))
+
+	def test_rejection_suggests_a_slug(self):
+		error = self.handler.validate({'tinygs_device': 'Estación Córdoba'})
+
+		self.assertIn('"Estacion_Cordoba"', error)
+
+	def test_rejection_without_a_usable_slug_suggests_nothing(self):
+		error = self.handler.validate({'tinygs_device': '###'})
+
+		self.assertNotIn('Did you mean', error)
+
 	def test_validate_accepts_plain_device_id(self):
 		self.assertIsNone(self.handler.validate({'tinygs_device': 'heltec-lp-01'}))
 
