@@ -1,4 +1,5 @@
-import os
+import json
+import uuid
 
 from .base import BasePluginHandler
 
@@ -9,15 +10,46 @@ _VALID_COORD_COMBINATIONS = {
     ("ENU", "POLAR"), ("ENU", "CARTESIAN"),
 }
 
+# A coordinates file is a few thousand lines of text at most. The cap keeps a
+# wrong upload (a video, a dump) from becoming a retained message the broker
+# hands to the plugin on every subscription.
+MAX_FILE_BYTES = 1024 * 1024
+
+
+def input_topic(plugin_uuid):
+    return f"plugin/{plugin_uuid}/input/file"
+
+
+def build_file_message(config, filename, content):
+    """The retained message that hands a coordinates file to the plugin.
+
+    It carries coord_type and coord_format so the plugin does not depend on
+    the environment it was launched with: changing them in the admin applies
+    to the next upload without restarting the container. upload_id lets the
+    plugin tell a new file from the broker re-delivering the retained one
+    after a reconnection.
+    """
+    if len(content) > MAX_FILE_BYTES:
+        raise ValueError(f"The file is larger than {MAX_FILE_BYTES // 1024} KB.")
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError("The file is not UTF-8 text.") from None
+
+    return json.dumps({
+        "upload_id": str(uuid.uuid4()),
+        "filename": filename,
+        "coord_type": str(config["coord_type"]).upper(),
+        "coord_format": str(config["coord_format"]).upper(),
+        "content": text,
+    })
+
 
 class FileTrackerHandler(BasePluginHandler):
     def validate(self, config):
-        file_path = config.get("file_path")
         coord_type = config.get("coord_type")
         coord_format = config.get("coord_format")
 
-        if not file_path:
-            return "Error: file_path is required for file_tracker."
         if not coord_type:
             return "Error: coord_type is required for file_tracker."
         if not coord_format:
@@ -32,15 +64,8 @@ class FileTrackerHandler(BasePluginHandler):
 
     def get_environment(self, config):
         environment = super().get_environment(config)
-        file_name = os.path.basename(os.path.abspath(config["file_path"]))
-        environment["FILE_PATH"] = f"/data/{file_name}"
-        environment["COORD_TYPE"] = str(config["coord_type"]).upper()
-        environment["COORD_FORMAT"] = str(config["coord_format"]).upper()
         plugin_id = config.get("plugin_id")
         if plugin_id is not None:
             environment["MQTT_PUBLISH_TOPIC"] = f"plugin/{plugin_id}/coordinates/raw"
+            environment["MQTT_INPUT_TOPIC"] = input_topic(plugin_id)
         return environment
-
-    def get_volumes(self, config):
-        host_dir = os.path.dirname(os.path.abspath(config["file_path"]))
-        return {host_dir: {"bind": "/data", "mode": "ro"}}

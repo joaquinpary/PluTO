@@ -77,3 +77,12 @@ class RawCoordinatesPayload(BaseModel):
         if any(not isinstance(point, expected_type) for point in self.coordinates):
             raise ValueError(f"coordinates must match coord_format={self.coord_format}")
         return self
+
+
+class FileUpload(BaseModel):
+    """What the server retains on plugin/<uuid>/input/file for this plugin."""
+    upload_id: str
+    filename: str = ""
+    coord_type: CoordinateType
+    coord_format: CoordinateFormat
+    content: str
