@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY pluto ./pluto/
 COPY server_core/ ./server_core/
+# The orchestrator builds the plugin images from here.
+COPY plugins/ ./plugins/
 COPY manage.py ./
 
 EXPOSE 8000

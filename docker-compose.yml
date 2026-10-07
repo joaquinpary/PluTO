@@ -1,6 +1,6 @@
 x-django-env: &django-env
   SECRET_KEY: ${SECRET_KEY:-change-me}
-  DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+  DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
   POSTGRES_HOST: postgres
   POSTGRES_PORT: 5432
