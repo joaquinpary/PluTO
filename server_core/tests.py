@@ -1,13 +1,16 @@
+import json
 from unittest.mock import patch
 
 from django.contrib.admin import AdminSite
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, OperationalError
 from django.db.models import ProtectedError
 from django.test import RequestFactory, SimpleTestCase, TestCase
 
-from .admin import PluginInstanceAdmin
+from .admin import PluginInstanceAdmin, PluginInstanceForm
 from .models import PluginData, PluginInstance
 from .plugin_handlers import PLUGIN_HANDLERS
+from .plugin_handlers.file_tracker import MAX_FILE_BYTES, build_file_message
 
 
 class PluginInstanceAdminTests(TestCase):
@@ -37,7 +40,6 @@ class PluginInstanceAdminTests(TestCase):
 			plugin_type='file_tracker',
 			status=PluginInstance.Status.RUNNING,
 			config={
-				'file_path': '/tmp/coords.txt',
 				'coord_type': 'ECEF',
 				'coord_format': 'GEO',
 			},
@@ -77,7 +79,8 @@ class PluginInstanceAdminTests(TestCase):
 		)
 		request = self.factory.post(f'/admin/server_core/plugininstance/{plugin.pk}/delete/')
 
-		with patch.object(self.model_admin, '_stop_plugin', return_value=(True, 'stopped')) as stop_plugin:
+		with patch.object(self.model_admin, '_stop_plugin', return_value=(True, 'stopped')) as stop_plugin, \
+				patch('server_core.admin.publish_retained'):
 			self.model_admin.delete_model(request, plugin)
 
 		self.assertFalse(PluginInstance.objects.filter(pk=plugin.pk).exists())
@@ -159,6 +162,106 @@ class TinyGSHandlerTests(SimpleTestCase):
 
 		self.assertEqual(environment['MIN_ELEVATION_DEG'], '15')
 		self.assertEqual(environment['LOOKAHEAD_MINUTES'], '20')
+
+
+class FileTrackerHandlerTests(SimpleTestCase):
+	def setUp(self):
+		self.handler = PLUGIN_HANDLERS['file_tracker']
+
+	def test_validate_needs_no_file_path(self):
+		self.assertIsNone(self.handler.validate({'coord_type': 'ecef', 'coord_format': 'geo'}))
+
+	def test_validate_rejects_an_invalid_combination(self):
+		self.assertIsNotNone(self.handler.validate({'coord_type': 'ENU', 'coord_format': 'GEO'}))
+
+	def test_the_plugin_is_told_where_files_arrive(self):
+		environment = self.handler.get_environment({'coord_type': 'ECEF', 'coord_format': 'GEO', 'plugin_id': 'abc'})
+
+		self.assertEqual(environment['MQTT_INPUT_TOPIC'], 'plugin/abc/input/file')
+		self.assertIsNone(self.handler.get_volumes({}))
+
+	def test_file_message_carries_the_content_and_the_formats(self):
+		message = json.loads(build_file_message({'coord_type': 'ecef', 'coord_format': 'geo'}, 'c.txt', '40 -3 6'.encode()))
+
+		self.assertEqual((message['coord_type'], message['coord_format']), ('ECEF', 'GEO'))
+		self.assertEqual(message['content'], '40 -3 6')
+		self.assertTrue(message['upload_id'])
+
+	def test_every_upload_gets_its_own_id(self):
+		config = {'coord_type': 'ECEF', 'coord_format': 'GEO'}
+
+		first = json.loads(build_file_message(config, 'c.txt', b'1 2 3'))
+		second = json.loads(build_file_message(config, 'c.txt', b'1 2 3'))
+
+		self.assertNotEqual(first['upload_id'], second['upload_id'])
+
+	def test_file_message_rejects_binary_and_oversized_files(self):
+		config = {'coord_type': 'ECEF', 'coord_format': 'GEO'}
+
+		with self.assertRaises(ValueError):
+			build_file_message(config, 'c.bin', b'\xff\xfe\x00')
+		with self.assertRaises(ValueError):
+			build_file_message(config, 'c.txt', b'1' * (MAX_FILE_BYTES + 1))
+
+
+class CoordinatesUploadTests(TestCase):
+	def setUp(self):
+		self.factory = RequestFactory()
+		self.model_admin = PluginInstanceAdmin(PluginInstance, AdminSite())
+		self.plugin = PluginInstance.objects.create(
+			name='tracker', plugin_type='file_tracker',
+			config={'coord_type': 'ECEF', 'coord_format': 'GEO'},
+		)
+
+	def form(self, plugin, content=b'40 -3 667\n'):
+		data = {
+			'name': plugin.name, 'plugin_type': plugin.plugin_type, 'status': plugin.status,
+			'station_lat': plugin.station_lat, 'station_lon': plugin.station_lon, 'station_alt': plugin.station_alt,
+			'config': json.dumps(plugin.config),
+		}
+		files = {'coordinates_file': SimpleUploadedFile('coords.txt', content)}
+		return PluginInstanceForm(data=data, files=files, instance=plugin)
+
+	def request(self):
+		request = self.factory.post('/admin/server_core/plugininstance/')
+		request._messages = MessageCollector()
+		return request
+
+	def test_saving_with_a_file_publishes_it_retained_on_the_input_topic(self):
+		form = self.form(self.plugin)
+		self.assertTrue(form.is_valid(), form.errors)
+
+		with patch('server_core.admin.publish_retained') as publish, patch('server_core.admin.PluginOrchestrator'):
+			self.model_admin.save_model(self.request(), form.save(commit=False), form, change=True)
+
+		topic, payload = publish.call_args.args
+		self.assertEqual(topic, f'plugin/{self.plugin.plugin_uuid}/input/file')
+		self.assertEqual(json.loads(payload)['content'], '40 -3 667\n')
+
+	def test_a_file_for_another_plugin_type_is_a_form_error(self):
+		plugin = PluginInstance.objects.create(name='gs', plugin_type='tinygs', config={'tinygs_device': 'My_TinyGS'})
+
+		form = self.form(plugin)
+
+		self.assertFalse(form.is_valid())
+		self.assertIn('coordinates_file', form.errors)
+
+	def test_a_binary_file_is_a_form_error(self):
+		form = self.form(self.plugin, content=b'\xff\xfe\x00')
+
+		self.assertFalse(form.is_valid())
+		self.assertIn('coordinates_file', form.errors)
+
+	def test_deleting_the_instance_clears_the_retained_file(self):
+		with patch('server_core.admin.publish_retained') as publish:
+			self.model_admin.delete_model(self.request(), self.plugin)
+
+		publish.assert_called_once_with(f'plugin/{self.plugin.plugin_uuid}/input/file', b'')
+
+
+class MessageCollector(list):
+	def add(self, level, message, extra_tags=''):
+		self.append(message)
 
 
 class PluginDataTests(TestCase):

@@ -39,7 +39,7 @@ class PluginInstance(models.Model):
     config = models.JSONField(
         default=dict,
         blank=True,
-        help_text='Plugin-specific parameters as JSON (e.g. {"file_path": "/data/coords.txt", "coord_type": "ECEF", "coord_format": "GEO"}).',
+        help_text='Plugin-specific parameters as JSON (e.g. {"coord_type": "ECEF", "coord_format": "GEO"}).',
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

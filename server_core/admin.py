@@ -1,11 +1,55 @@
+from django import forms
 from django.contrib import admin, messages
 
 from .models import DispatchOrder, PluginInstance, Rotor, RotorState
+from .mqtt_publish import publish_retained
 from .orchestrator import PluginOrchestrator
+from .plugin_handlers.file_tracker import build_file_message, input_topic
+
+
+class PluginInstanceForm(forms.ModelForm):
+    coordinates_file = forms.FileField(
+        required=False,
+        help_text=(
+            'file_tracker only. Sent to the plugin when you save, running or not: a '
+            'running plugin publishes it right away, a stopped one when it is launched. '
+            'A new file replaces the previous one.'
+        ),
+    )
+
+    class Meta:
+        model = PluginInstance
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        upload = cleaned_data.get('coordinates_file')
+        if not upload:
+            return cleaned_data
+
+        plugin_type = cleaned_data.get('plugin_type') or self.instance.plugin_type
+        if plugin_type != 'file_tracker':
+            self.add_error('coordinates_file', 'Only file_tracker instances take a coordinates file.')
+            return cleaned_data
+
+        config = cleaned_data.get('config') or {}
+        missing = [key for key in ('coord_type', 'coord_format') if not config.get(key)]
+        if missing:
+            self.add_error('coordinates_file', f'Set {" and ".join(missing)} in the configuration first.')
+            return cleaned_data
+
+        # Built here rather than in save_model so a bad file is a form error
+        # next to the field, not a message after the row was already saved.
+        try:
+            cleaned_data['coordinates_message'] = build_file_message(config, upload.name, upload.read())
+        except ValueError as exc:
+            self.add_error('coordinates_file', str(exc))
+        return cleaned_data
 
 
 @admin.register(PluginInstance)
 class PluginInstanceAdmin(admin.ModelAdmin):
+    form = PluginInstanceForm
     actions = ['launch_selected_plugins', 'stop_selected_plugins', 'sync_container_statuses']
     list_display  = ('name', 'plugin_type', 'status', 'runtime_status', 'rotor', 'container_id', 'updated_at')
     list_filter   = ('plugin_type', 'status')
@@ -36,12 +80,12 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         (
             'Plugin Configuration',
             {
-                'fields': ('config',),
+                'fields': ('config', 'coordinates_file'),
                 'description': (
                     'Plugin-specific parameters as a JSON object. '
                     'These are passed directly to the orchestrator when launching. '
                     'Example for file_tracker: '
-                    '{"file_path": "/data/coords.txt", "coord_type": "ECEF", "coord_format": "GEO"}'
+                    '{"coord_type": "ECEF", "coord_format": "GEO"}'
                 ),
             },
         ),
@@ -75,12 +119,12 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         (
             'Plugin Configuration',
             {
-                'fields': ('config',),
+                'fields': ('config', 'coordinates_file'),
                 'description': (
                     'Plugin-specific parameters as a JSON object. '
                     'These are passed directly to the orchestrator when launching. '
                     'Example for file_tracker: '
-                    '{"file_path": "/data/coords.txt", "coord_type": "ECEF", "coord_format": "GEO"}'
+                    '{"coord_type": "ECEF", "coord_format": "GEO"}'
                 ),
             },
         ),
@@ -171,12 +215,36 @@ class PluginInstanceAdmin(admin.ModelAdmin):
 
         return True, runtime_status
 
+    def _send_coordinates_file(self, request, plugin, message):
+        try:
+            publish_retained(input_topic(plugin.plugin_uuid), message)
+        except Exception as exc:
+            self.message_user(request, f'Could not send the coordinates file to {plugin.name}: {exc}', level=messages.ERROR)
+            return
+        self.message_user(request, f'Coordinates file sent to {plugin.name}.', level=messages.SUCCESS)
+
+    def _clear_coordinates_file(self, request, plugin):
+        # Otherwise the file outlives the instance, retained on a topic nobody
+        # will ever read again.
+        if plugin.plugin_type != 'file_tracker':
+            return
+        try:
+            publish_retained(input_topic(plugin.plugin_uuid), b'')
+        except Exception as exc:
+            self.message_user(request, f'Could not clear the coordinates file of {plugin.name}: {exc}', level=messages.WARNING)
+
     def save_model(self, request, obj, form, change):
         previous_status = None
         if change:
             previous_status = PluginInstance.objects.get(pk=obj.pk).status
 
         super().save_model(request, obj, form, change)
+
+        # Before the lifecycle, which returns early. The message is retained,
+        # so a plugin launched right below still finds it when it subscribes.
+        message = form.cleaned_data.get('coordinates_message') if form is not None else None
+        if message:
+            self._send_coordinates_file(request, obj, message)
 
         orchestrator = PluginOrchestrator()
 
@@ -211,6 +279,7 @@ class PluginInstanceAdmin(admin.ModelAdmin):
                 return
 
         super().delete_model(request, obj)
+        self._clear_coordinates_file(request, obj)
 
     def delete_queryset(self, request, queryset):
         orchestrator = PluginOrchestrator()
@@ -226,7 +295,11 @@ class PluginInstanceAdmin(admin.ModelAdmin):
             deletable_ids.append(plugin.pk)
 
         if deletable_ids:
-            super().delete_queryset(request, PluginInstance.objects.filter(pk__in=deletable_ids))
+            deletable = PluginInstance.objects.filter(pk__in=deletable_ids)
+            deleted = list(deletable)
+            super().delete_queryset(request, deletable)
+            for plugin in deleted:
+                self._clear_coordinates_file(request, plugin)
 
     @admin.action(description='Launch selected plugins')
     def launch_selected_plugins(self, request, queryset):
