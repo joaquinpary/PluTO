@@ -1,4 +1,4 @@
-"""Builds the envelope this plugin republishes for the central ingester.
+"""Builds the envelope this plugin sends to the server's /api/plugin-data/<type>.
 
 Pure stdlib and no I/O on purpose: this is the logic that is easiest to get
 wrong and cheapest to test, the same split file_tracker/parser.py and
@@ -20,7 +20,7 @@ PREVIEW_BYTES = 1024
 def normalize_payload(raw):
     """Turn the board's raw bytes into (dict, payload_format).
 
-    The result is always a dict: the ingester stores it in a column that holds
+    The result is always a dict: the server stores it in a column that holds
     a JSON object, so a bare list or scalar is wrapped. Note that
     json.loads(b"42") returns 42 and json.loads(b"null") returns None -- both
     are valid JSON and neither is a dict.
@@ -71,7 +71,7 @@ def _has_nul(payload):
 
 
 def build_envelope(plugin_id, plugin_type, device, message_type, source_topic, raw, now=None):
-    """Wrap one board message with everything the ingester needs to store it."""
+    """Wrap one board message with everything the server needs to store it."""
     payload, payload_format = normalize_payload(raw)
     timestamp = now or datetime.now(timezone.utc)
 

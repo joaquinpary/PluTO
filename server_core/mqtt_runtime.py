@@ -1,7 +1,7 @@
 """What every MQTT command in server_core needs before it can consume anything.
 
-Both mqtt_ingest and mqtt_dispatch run as their own container from the server
-image, and both have to wait for the same thing before touching the database.
+mqtt_dispatch runs as its own container from the server image, and has to wait
+for the database and its migrations before touching it.
 """
 import logging
 import time

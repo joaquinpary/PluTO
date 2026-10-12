@@ -1,9 +1,11 @@
+import json
 import logging
 import os
-import json
+import sys
 
 from models import Station
 from mqtt_handler import FileTrackerMQTTClient
+from pluto_sdk import ConfigurationError, from_environment
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("file_tracker_main")
@@ -45,6 +47,16 @@ def main():
     station = build_station_from_env()
 
     try:
+        # file_tracker produces no data of its own: the API is only used to
+        # forward the reports of the board bound to the instance, if any.
+        api, bridge = from_environment()
+    except ConfigurationError as exc:
+        logger.error("%s", exc)
+        return 1
+    if bridge is not None:
+        logger.info("Forwarding the reports of board %s", bridge.device_id)
+
+    try:
         mqtt_client = FileTrackerMQTTClient(
             broker_url=broker_url,
             broker_port=broker_port,
@@ -53,12 +65,18 @@ def main():
             input_topic=input_topic,
             publish_topic=publish_topic,
             station=station,
+            bridge=bridge,
         )
         mqtt_client.start()
     except KeyboardInterrupt:
         logger.info("Shutting down file tracker...")
     except Exception as exc:
         logger.error("An error occurred: %s", exc, exc_info=True)
+        # A failure must not look like a clean exit, to Docker or to whoever
+        # reads `docker ps -a`.
+        return 1
+
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

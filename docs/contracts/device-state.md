@@ -117,11 +117,17 @@ Hay un código por cada regla de [`coordinates-dto.md`](coordinates-dto.md):
 
 ## 6. Cómo lo usa el servidor
 
-- `mqtt_ingest` (el mismo proceso que guarda los datos de los plugins) se suscribe a
-  `device/+/status` y `device/+/state`.
-- La primera vez que una placa reporta, crea su `Rotor`, sin alta manual. `status`
-  actualiza `online`, y como el mensaje es retenido y se repite en cada reconexión de la
-  ingesta, solo un cambio real mueve la fecha del cambio.
+- El servidor no se suscribe a estos tópicos. Los escucha el plugin vinculado a la placa
+  (le llega su MAC como `ROTOR_DEVICE_ID`), que reenvía cada mensaje tal cual a
+  `POST /api/device/status` y `/api/device/state`
+  ([`ingest-api.md`](ingest-api.md) §4). La placa no cambia nada.
+- El servidor descubre las placas leyendo los `status` retenidos (`POST
+  /api/boards/scan`, [`ingest-api.md`](ingest-api.md) §6), y ahí crea su `Rotor`, sin
+  alta manual. `status` actualiza `online`, y como el mensaje es retenido y se repite en
+  cada reconexión del plugin y en cada escaneo, solo un cambio real mueve la fecha del
+  cambio.
+- Mientras no corre ningún plugin vinculado a la placa, no se registran sus `state` ni
+  sus cambios de `status`; al lanzarlo, el `status` retenido trae el actual.
 - Cada `state` es una fila de `RotorState`, con los campos de §3 en columnas y además el
   documento completo, para no perder campos que se agreguen después. La hora de la placa
   se guarda solo si su reloj estaba sincronizado.

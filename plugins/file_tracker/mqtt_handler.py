@@ -10,12 +10,15 @@ logger = logging.getLogger(__name__)
 
 
 class FileTrackerMQTTClient:
-    def __init__(self, broker_url, broker_port, input_topic, publish_topic, station: Station, username=None, password=None):
+    def __init__(self, broker_url, broker_port, input_topic, publish_topic, station: Station,
+                 username=None, password=None, bridge=None):
         self.broker_url = broker_url
         self.broker_port = broker_port
         self.input_topic = input_topic
         self.publish_topic = publish_topic
         self.station = station
+        # pluto_sdk.BoardBridge, or None when no board is bound to the instance.
+        self.bridge = bridge
         self.last_upload_id = None
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
@@ -37,10 +40,17 @@ class FileTrackerMQTTClient:
 
         # Subscribing here and not once in start(): a reconnection starts a
         # clean session, and the subscription has to be made again.
-        client.subscribe(self.input_topic, qos=1)
+        subscriptions = [(self.input_topic, 1)]
+        if self.bridge is not None:
+            subscriptions += self.bridge.subscriptions()
+        client.subscribe(subscriptions)
         logger.info("Connected. Waiting for coordinates files on %s", self.input_topic)
 
     def on_message(self, client, userdata, msg):
+        if self.bridge is not None and self.bridge.handles(msg.topic):
+            self.bridge.forward(msg.topic, msg.payload)
+            return
+
         # A broad catch: a bad file is the uploader's mistake and must not take
         # the plugin down; the next upload has to find it listening.
         try:

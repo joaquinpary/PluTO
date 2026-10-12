@@ -5,8 +5,9 @@ front descubre placas y las vincula a un plugin. Reemplaza a los tópicos
 `plugin/<uuid>/data/<tipo>` y `device/<id>/status|state` como entrada al backend: la
 placa sigue hablando MQTT con su plugin, y el plugin le reenvía al servidor por HTTP.
 
-Estado: **v1**, implementado en el servidor (`server_core/api.py`, Django REST Framework).
-Mientras los plugins no lo usen, `mqtt_ingest` sigue guardando por MQTT como antes.
+Estado: **v1**, implementado en el servidor (`server_core/api.py`, Django REST Framework)
+y en los plugins a través de `plugins/_sdk/pluto_sdk/` (cliente con cola y reintentos, y
+el puente de la placa). Los tópicos `plugin/<uuid>/data/<tipo>` ya no existen.
 
 El esquema OpenAPI se sirve en `/api/schema` y su Swagger en `/api/docs`. Este documento
 explica las reglas; el esquema tiene el detalle de cada campo. Los errores vienen siempre

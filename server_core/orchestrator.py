@@ -73,7 +73,14 @@ class PluginOrchestrator:
             return True, image_name
         except docker.errors.ImageNotFound:
             try:
-                self.client.images.build(path=source_path, tag=image_name, rm=True)
+                # The context is plugins/ rather than the plugin's own
+                # directory, so its Dockerfile can copy the shared pluto_sdk.
+                self.client.images.build(
+                    path=os.path.dirname(source_path),
+                    dockerfile=os.path.join(plugin_type, "Dockerfile"),
+                    tag=image_name,
+                    rm=True,
+                )
                 logger.info(f"Built Docker image '{image_name}' from '{source_path}'")
                 return True, image_name
             except docker.errors.BuildError as exc:

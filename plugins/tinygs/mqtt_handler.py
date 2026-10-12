@@ -10,27 +10,30 @@ logger = logging.getLogger(__name__)
 
 class TinyGSMQTTClient:
     """
-    Subscribes to the topics published by a TinyGS device and republishes every
-    message as an envelope on the plugin's own data topic, where the central
-    ingester picks it up and persists it.
+    Subscribes to the topics published by a TinyGS device and hands every
+    message, wrapped in an envelope, to the server's /api/plugin-data/<type>.
+    With a board bound to the instance it also forwards that board's reports.
     """
 
     def __init__(self, broker_url, broker_port, device_id, plugin_id, plugin_type,
-                 publish_topic_base, username=None, password=None, qos=1,
-                 topic_prefix="pluto", tracker=None):
+                 api, username=None, password=None, qos=1,
+                 topic_prefix="pluto", tracker=None, bridge=None):
         self.broker_url = broker_url
         self.broker_port = broker_port
         self.device_id = device_id
         self.plugin_id = plugin_id
         self.plugin_type = plugin_type
-        self.publish_topic_base = publish_topic_base.rstrip("/")
+        # pluto_sdk.ApiClient: queues the request, so on_message never waits on HTTP.
+        self.api = api
+        # pluto_sdk.BoardBridge, or None when no board is bound to the instance.
+        self.bridge = bridge
         self.qos = qos
         # The prefix is configurable on the station itself, so it is a setting
         # here too rather than a literal.
         self.tracking_topic = f"{topic_prefix}/{device_id}/tracking"
         self.rx_topic = f"{topic_prefix}/{device_id}/rx"
         # Turns the satellite named in each tracking message into a pass. None
-        # keeps the plugin a pure republisher, which is what its tests build.
+        # keeps the plugin a pure relay of the board, which is what its tests build.
         self.tracker = tracker
         # A stable client_id makes a duplicated container visible: the broker
         # kicks the other one out instead of silently doubling every message.
@@ -58,13 +61,19 @@ class TinyGSMQTTClient:
         logger.info("Connected to MQTT broker successfully.")
         # Subscribing here (and not before connecting) is what makes the
         # subscriptions come back on their own after a broker restart.
-        client.subscribe([(self.tracking_topic, self.qos), (self.rx_topic, self.qos)])
-        logger.info("Subscribed to %s and %s", self.tracking_topic, self.rx_topic)
-        logger.info("Republishing to %s/{tracking,rx}", self.publish_topic_base)
+        subscriptions = [(self.tracking_topic, self.qos), (self.rx_topic, self.qos)]
+        if self.bridge is not None:
+            subscriptions += self.bridge.subscriptions()
+        client.subscribe(subscriptions)
+        logger.info("Subscribed to %s", ", ".join(topic for topic, _ in subscriptions))
 
     def on_message(self, client, userdata, msg):
+        if self.bridge is not None and self.bridge.handles(msg.topic):
+            self.bridge.forward(msg.topic, msg.payload)
+            return
+
         # Derived by comparing against the topics we subscribed to, not by
-        # splitting msg.topic: the segment ends up in the outgoing topic, so it
+        # splitting msg.topic: the segment ends up in the request URL, so it
         # must never carry anything the board chose.
         message_type = "tracking" if msg.topic == self.tracking_topic else "rx"
 
@@ -77,12 +86,11 @@ class TinyGSMQTTClient:
                 source_topic=msg.topic,
                 raw=msg.payload,
             )
-            out_topic = f"{self.publish_topic_base}/{message_type}"
-            result = client.publish(out_topic, json.dumps(envelope), qos=self.qos)
+            self.api.send_data(message_type, envelope)
             logger.info(
-                "[%s] device=%s -> %s format=%s bytes=%s id=%s mid=%s",
-                message_type, self.device_id, out_topic, envelope["payload_format"],
-                len(msg.payload), envelope["message_id"], result.mid,
+                "[%s] device=%s format=%s bytes=%s id=%s queued for the server",
+                message_type, self.device_id, envelope["payload_format"],
+                len(msg.payload), envelope["message_id"],
             )
             logger.debug("envelope: %s", envelope)
 
@@ -92,8 +100,8 @@ class TinyGSMQTTClient:
             logger.exception("Failed to handle message from %s", msg.topic)
 
     def _feed_tracker(self, raw):
-        # A payload that is not a JSON object still got republished above: the
-        # envelope knows how to carry text and binary. Only the tracker needs to
+        # A payload that is not a JSON object still went to the server above:
+        # the envelope knows how to carry text and binary. Only the tracker needs to
         # read it, and it has nothing to follow in one it cannot read.
         try:
             document = json.loads(raw.decode("utf-8"))

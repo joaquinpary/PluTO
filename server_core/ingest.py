@@ -1,9 +1,8 @@
 """Turns a plugin's envelope into a PluginData row.
 
-Shared by the two ways data comes in: the REST endpoint (server_core/api.py)
-and, until the plugins move to it, the mqtt_ingest command. Both know which
-instance the envelope belongs to before calling in here, from the token or from
-the topic, and that is the only plugin_id that counts.
+Pure of HTTP, so the rules about what reaches a row are tested on their own.
+The caller (server_core/api.py) already knows which instance the envelope
+belongs to, from the token, and that is the only plugin_id that counts.
 """
 import logging
 import re

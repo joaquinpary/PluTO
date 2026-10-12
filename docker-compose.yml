@@ -18,7 +18,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: pluto/server:latest
-    # Migrating on start is what creates plugin_data, which mqtt_ingest waits for.
+    # Migrating on start is what creates the tables mqtt_dispatch waits for.
     command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
     environment: *django-env
     depends_on:
@@ -35,29 +35,9 @@ services:
       - pluto-network
       - docker-proxy
 
+  # Turns the plugins' trajectories into the binary batches the board executes.
   # Same image and code as the server, run as a second process: the MQTT loop
   # can't live inside runserver, whose autoreloader would run it twice.
-  mqtt_ingest:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: pluto/server:latest
-    command: python manage.py mqtt_ingest
-    environment: *django-env
-    volumes:
-      - .:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mosquitto:
-        condition: service_started
-    restart: unless-stopped
-    networks:
-      - pluto-network
-
-  # The other half of the MQTT core: turns the plugins' trajectories into the
-  # binary batches the board executes. Separate process from the ingester so a
-  # slow database write on one side never delays the other's setpoints.
   mqtt_dispatch:
     build:
       context: .

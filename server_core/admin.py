@@ -395,7 +395,7 @@ class RotorAdmin(admin.ModelAdmin):
     ]
 
     def has_add_permission(self, request):
-        # Boards register themselves the first time they report on MQTT.
+        # Boards are registered by a scan of the broker (POST /api/boards/scan).
         return False
 
 
