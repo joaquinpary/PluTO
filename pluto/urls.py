@@ -17,7 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.db import DatabaseError, connection
 from django.http import JsonResponse
-from django.urls import path
+from django.urls import include, path
 
 
 def healthcheck(_request):
@@ -47,4 +47,5 @@ def healthcheck(_request):
 urlpatterns = [
     path('', healthcheck, name='healthcheck'),
     path('admin/', admin.site.urls),
+    path('api/', include('server_core.urls')),
 ]

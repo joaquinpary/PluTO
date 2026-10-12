@@ -9,15 +9,13 @@ schema lives in one place.
 import json
 import logging
 import os
-import re
 import signal
 import uuid
-from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from django.db import DatabaseError, IntegrityError, close_old_connections, transaction
+from django.db import DatabaseError, close_old_connections
 
 from server_core.device_state import (
     DEVICE_STATE_TOPIC,
@@ -26,23 +24,22 @@ from server_core.device_state import (
     store_state,
     store_status,
 )
-from server_core.models import PluginData, PluginInstance
+from server_core.ingest import (
+    DUPLICATE,
+    INGESTED,
+    MESSAGE_TYPE_RE,
+    envelope_fields,
+    store_document,
+)
+from server_core.models import PluginInstance
 from server_core.mqtt_runtime import wait_for_migrations
 
 logger = logging.getLogger(__name__)
 
 INGEST_TOPIC = 'plugin/+/data/+'
 DEFAULT_TOPICS = (INGEST_TOPIC, DEVICE_STATUS_TOPIC, DEVICE_STATE_TOPIC)
-MESSAGE_TYPE_RE = re.compile(r'^[a-z0-9_-]{1,32}$')
 
-INGESTED = 'ingested'
-DUPLICATE = 'duplicate'
 UNKNOWN_PLUGIN = 'unknown_plugin'
-
-# Only these envelope keys ever reach a column. Everything else in the envelope
-# is dropped, so a publisher can't set created_at or the plugin it belongs to.
-# plugin_type isn't copied either: the row's plugin foreign key already says it.
-_ENVELOPE_FIELDS = ('device', 'payload_format', 'message_id', 'source_topic')
 
 
 def parse_ingest_topic(topic):
@@ -60,29 +57,12 @@ def parse_ingest_topic(topic):
     return plugin_id, message_type
 
 
-def normalize_datetime(value):
-    """Parse an ISO-8601 string into an aware UTC datetime.
-
-    received_at is a timestamptz column. A naive value would be read in the
-    session's time zone, and one without an offset is assumed to be UTC.
-    """
-    if not value:
-        return None
-
-    try:
-        parsed = datetime.fromisoformat(str(value))
-    except (TypeError, ValueError):
-        logger.warning('Could not parse received_at value %r', value)
-        return None
-
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-
-    return parsed.astimezone(timezone.utc)
-
-
 def build_document_fields(topic, payload):
-    """Turn a raw MQTT message into the fields of one PluginData row, or None if unusable."""
+    """Turn a raw MQTT message into the fields of one PluginData row, or None if unusable.
+
+    The topic decides plugin_id and message_type: a plugin cannot claim another
+    instance's data without publishing on that instance's topic.
+    """
     parsed_topic = parse_ingest_topic(topic)
     if parsed_topic is None:
         logger.warning('Ignoring message on unexpected topic %s', topic)
@@ -100,40 +80,7 @@ def build_document_fields(topic, payload):
         logger.warning('Ignoring non-object envelope on %s', topic)
         return None
 
-    declared_plugin_id = envelope.get('plugin_id')
-    if declared_plugin_id and declared_plugin_id != plugin_id:
-        # The topic wins: a plugin cannot claim another instance's data without
-        # publishing on that instance's topic.
-        logger.warning(
-            'Envelope on %s declares plugin_id %s, using the one from the topic instead',
-            topic, declared_plugin_id,
-        )
-
-    fields = {
-        'plugin_id': plugin_id,
-        'message_type': message_type,
-        'ingest_topic': topic,
-        'received_at': normalize_datetime(envelope.get('received_at')),
-    }
-
-    for key in _ENVELOPE_FIELDS:
-        value = envelope.get(key)
-        if value is not None:
-            fields[key] = str(value)
-
-    schema_version = envelope.get('schema_version')
-    if isinstance(schema_version, int):
-        fields['schema_version'] = schema_version
-
-    body = envelope.get('payload')
-    if isinstance(body, dict):
-        fields['payload'] = body
-    else:
-        # The payload column always holds a JSON object, so anything else is wrapped.
-        fields['payload'] = {'value': body}
-        fields['payload_format'] = 'coerced'
-
-    return fields
+    return {'plugin_id': plugin_id, **envelope_fields(plugin_id, message_type, envelope, ingest_topic=topic)}
 
 
 def store_message(fields):
@@ -152,18 +99,7 @@ def store_message(fields):
     if plugin is None:
         return UNKNOWN_PLUGIN
 
-    try:
-        # The savepoint keeps a rejected INSERT from breaking an outer transaction.
-        with transaction.atomic():
-            PluginData.objects.create(plugin=plugin, **fields)
-    except IntegrityError:
-        # message_id is unique: a QoS 1 redelivery carries the same one.
-        message_id = fields.get('message_id')
-        if message_id and PluginData.objects.filter(message_id=message_id).exists():
-            return DUPLICATE
-        raise
-
-    return INGESTED
+    return store_document(plugin, fields)
 
 
 class Command(BaseCommand):

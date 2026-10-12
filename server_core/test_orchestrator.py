@@ -26,3 +26,41 @@ class PluginOrchestratorTests(SimpleTestCase):
         self.assertEqual(environment['MQTT_BROKER_PORT'], '1884')
         self.assertEqual(environment['MQTT_USERNAME'], 'user')
         self.assertEqual(environment['MQTT_PASSWORD'], 'secret')
+
+    @override_settings(PLUTO_API_URL='http://server:8000/api/')
+    def test_plugins_get_the_api_url_their_token_and_their_board(self):
+        with patch('server_core.orchestrator.docker.DockerClient') as client_cls:
+            client = client_cls.return_value
+            client.containers.run.return_value.id = 'container-123'
+
+            PluginOrchestrator().spawn_plugin(
+                plugin_type='tinygs',
+                instance_id='uuid-1',
+                station_coordinates={'lat': 0, 'lon': 0, 'alt': 0},
+                api_token='secret-token',
+                rotor_device_id='a1b2c3d4e5f6',
+                tinygs_device='My_TinyGS',
+            )
+
+        environment = client.containers.run.call_args.kwargs['environment']
+        self.assertEqual(environment['PLUTO_API_URL'], 'http://server:8000/api/')
+        self.assertEqual(environment['PLUTO_API_TOKEN'], 'secret-token')
+        self.assertEqual(environment['ROTOR_DEVICE_ID'], 'a1b2c3d4e5f6')
+        # Neither is plugin configuration, so neither goes through the handler.
+        self.assertNotIn('API_TOKEN', environment)
+
+    def test_a_plugin_without_a_board_gets_no_device_id(self):
+        with patch('server_core.orchestrator.docker.DockerClient') as client_cls:
+            client = client_cls.return_value
+            client.containers.run.return_value.id = 'container-123'
+
+            PluginOrchestrator().spawn_plugin(
+                plugin_type='tinygs',
+                instance_id='uuid-1',
+                station_coordinates={'lat': 0, 'lon': 0, 'alt': 0},
+                tinygs_device='My_TinyGS',
+            )
+
+        environment = client.containers.run.call_args.kwargs['environment']
+        self.assertNotIn('ROTOR_DEVICE_ID', environment)
+        self.assertNotIn('PLUTO_API_TOKEN', environment)

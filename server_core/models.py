@@ -17,6 +17,11 @@ class PluginInstance(models.Model):
     status      = models.CharField(max_length=20, choices=Status.choices, default=Status.STOPPED)
     container_id = models.CharField(max_length=128, blank=True)
 
+    # sha256 of the token the running container uses against /api/. Only the hash
+    # is stored, so reading the database is not enough to impersonate a plugin.
+    # Set on launch and cleared on stop, which is what revokes the token.
+    api_token_hash = models.CharField(max_length=64, blank=True, editable=False, db_index=True)
+
     # The rotor this instance drives while it runs. Empty is normal: a plugin can
     # be configured before any board has registered, and one that only produces
     # data never drives anything. SET_NULL because unassigning a rotor is routine
@@ -75,10 +80,8 @@ class PluginInstance(models.Model):
         }
 
 class PluginData(models.Model):
-    """One row per message a plugin published on plugin/<plugin_uuid>/data/<type>.
-
-    Its only writer is the mqtt_ingest management command, which runs as its
-    own container from the server image.
+    """One row per message a plugin sent: POST /api/plugin-data/<type>, or the
+    older plugin/<plugin_uuid>/data/<type> topic that mqtt_ingest still reads.
     """
     # PROTECT: a plugin that already produced data is stopped, not deleted,
     # so its history keeps pointing at a real instance.
@@ -113,10 +116,10 @@ class PluginData(models.Model):
 class Rotor(models.Model):
     """An ESP32 driving a pan-tilt, known by the device_id of its MQTT topics.
 
-    mqtt_ingest creates the row the first time a board reports on
-    device/<device_id>/status or device/<device_id>/state
-    (docs/contracts/device-state.md), so a new board shows up without being
-    registered by hand.
+    The row is created the first time the server hears of the board: a scan of
+    the retained device/<device_id>/status messages (POST /api/boards/scan), or
+    a report on device/<device_id>/status|state (docs/contracts/device-state.md).
+    Either way a new board shows up without being registered by hand.
     """
     device_id = models.CharField(
         max_length=12,

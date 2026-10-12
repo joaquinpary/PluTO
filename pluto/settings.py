@@ -10,7 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from decouple import Csv, config
 
@@ -43,12 +45,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
+    'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
+    'drf_spectacular',
     'server_core',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    # Before CommonMiddleware, so its redirects also carry the CORS headers.
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -82,6 +90,14 @@ MQTT_CONFIG = {
     'USERNAME': config('MQTT_USERNAME', default=''),
     'PASSWORD': config('MQTT_PASSWORD', default=''),
 }
+
+# Where the plugin containers reach this server, on pluto-network. They send
+# that host in their requests, so it has to be allowed whatever
+# DJANGO_ALLOWED_HOSTS says, or every plugin request gets a 400.
+PLUTO_API_URL = config('PLUTO_API_URL', default='http://server:8000/api/')
+_api_host = urlsplit(PLUTO_API_URL).hostname
+if _api_host and _api_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_api_host)
 
 
 # Database
@@ -140,3 +156,44 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# REST API (/api/, docs/contracts/ingest-api.md)
+#
+# One person uses PluTO, so a valid login is all a front-end endpoint asks for:
+# no roles, no per-model permissions. It is still the default, because port
+# 8000 is published and an endpoint added without thinking about it must come
+# out closed. Plugin containers authenticate differently (Plugin <token>), and
+# the views that take them say so explicitly.
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# A short access token limits what a leaked one is worth; each refresh hands
+# out a new refresh token and blacklists the old, so a stolen one works once.
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+}
+
+# The origins the front end is served from, e.g. http://localhost:5173 for the
+# Vite dev server. Empty means no cross-origin browser access at all.
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='', cast=Csv())
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'PluTO API',
+    'DESCRIPTION': 'Plugin ingestion and board binding. The prose contract is docs/contracts/ingest-api.md.',
+    'VERSION': '1',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
