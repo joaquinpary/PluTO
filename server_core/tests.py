@@ -1,5 +1,5 @@
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.contrib.admin import AdminSite
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -8,7 +8,8 @@ from django.db.models import ProtectedError
 from django.test import RequestFactory, SimpleTestCase, TestCase
 
 from .admin import PluginInstanceAdmin, PluginInstanceForm
-from .models import PluginData, PluginInstance
+from .api_tokens import hash_token
+from .models import PluginData, PluginInstance, Rotor
 from .plugin_handlers import PLUGIN_HANDLERS
 from .plugin_handlers.file_tracker import MAX_FILE_BYTES, build_file_message
 
@@ -85,6 +86,57 @@ class PluginInstanceAdminTests(TestCase):
 
 		self.assertFalse(PluginInstance.objects.filter(pk=plugin.pk).exists())
 		stop_plugin.assert_called_once()
+
+	def test_launch_hands_the_container_a_token_and_its_board(self):
+		rotor = Rotor.objects.create(device_id='a1b2c3d4e5f6')
+		plugin = PluginInstance.objects.create(name='tinygs-1', plugin_type='tinygs', rotor=rotor)
+		orchestrator = MagicMock()
+		orchestrator.spawn_plugin.return_value = (True, 'container-123')
+
+		self.model_admin._start_plugin(plugin, orchestrator)
+
+		kwargs = orchestrator.spawn_plugin.call_args.kwargs
+		self.assertEqual(kwargs['rotor_device_id'], 'a1b2c3d4e5f6')
+		plugin.refresh_from_db()
+		# Only the hash is kept, and it is the hash of what the container got.
+		self.assertEqual(plugin.api_token_hash, hash_token(kwargs['api_token']))
+
+	def test_a_failed_launch_leaves_no_token(self):
+		plugin = PluginInstance.objects.create(name='tinygs-2', plugin_type='tinygs', api_token_hash='stale')
+		orchestrator = MagicMock()
+		orchestrator.spawn_plugin.return_value = (False, 'boom')
+
+		self.model_admin._start_plugin(plugin, orchestrator)
+
+		plugin.refresh_from_db()
+		self.assertEqual(plugin.api_token_hash, '')
+		self.assertIsNone(orchestrator.spawn_plugin.call_args.kwargs['rotor_device_id'])
+
+	def test_stopping_revokes_the_token(self):
+		plugin = PluginInstance.objects.create(
+			name='tinygs-3', plugin_type='tinygs',
+			status=PluginInstance.Status.RUNNING, api_token_hash='a' * 64,
+		)
+		orchestrator = MagicMock()
+		orchestrator.kill_plugin.return_value = (True, 'stopped')
+
+		self.model_admin._stop_plugin(plugin, orchestrator)
+
+		plugin.refresh_from_db()
+		self.assertEqual(plugin.api_token_hash, '')
+
+	def test_sync_revokes_the_token_of_a_vanished_container(self):
+		plugin = PluginInstance.objects.create(
+			name='tinygs-4', plugin_type='tinygs',
+			status=PluginInstance.Status.RUNNING, api_token_hash='a' * 64,
+		)
+		orchestrator = MagicMock()
+		orchestrator.get_container_status.return_value = (True, 'not_found')
+
+		self.model_admin._sync_plugin_status(plugin, orchestrator)
+
+		plugin.refresh_from_db()
+		self.assertEqual((plugin.status, plugin.api_token_hash), (PluginInstance.Status.STOPPED, ''))
 
 
 class TinyGSHandlerTests(SimpleTestCase):

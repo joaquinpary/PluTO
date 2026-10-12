@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib import admin, messages
 
+from .api_tokens import issue_token
 from .models import DispatchOrder, PluginInstance, Rotor, RotorState
 from .mqtt_publish import publish_retained
 from .orchestrator import PluginOrchestrator
@@ -166,22 +167,29 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         return runtime_status.replace('_', ' ').title()
 
     def _start_plugin(self, plugin, orchestrator):
+        # A new token on every launch, so one leaked from an earlier container
+        # stops working as soon as that container is replaced.
+        api_token, api_token_hash = issue_token()
         success, result = orchestrator.spawn_plugin(
             plugin_type=plugin.plugin_type,
             instance_id=plugin.plugin_uuid,
             station_coordinates=plugin.station_coordinates,
+            api_token=api_token,
+            rotor_device_id=plugin.rotor.device_id if plugin.rotor_id else None,
             **(plugin.config or {}),
         )
 
         if success:
             plugin.status = PluginInstance.Status.RUNNING
             plugin.container_id = result
-            plugin.save(update_fields=['status', 'container_id', 'updated_at'])
+            plugin.api_token_hash = api_token_hash
+            plugin.save(update_fields=['status', 'container_id', 'api_token_hash', 'updated_at'])
             return True, result
 
         plugin.status = PluginInstance.Status.ERROR
         plugin.container_id = ''
-        plugin.save(update_fields=['status', 'container_id', 'updated_at'])
+        plugin.api_token_hash = ''
+        plugin.save(update_fields=['status', 'container_id', 'api_token_hash', 'updated_at'])
         return False, result
 
     def _stop_plugin(self, plugin, orchestrator, failed_status=PluginInstance.Status.ERROR):
@@ -190,7 +198,8 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         if success:
             plugin.status = PluginInstance.Status.STOPPED
             plugin.container_id = ''
-            plugin.save(update_fields=['status', 'container_id', 'updated_at'])
+            plugin.api_token_hash = ''
+            plugin.save(update_fields=['status', 'container_id', 'api_token_hash', 'updated_at'])
             return True, result
 
         plugin.status = failed_status
@@ -205,13 +214,17 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         mapped_status = self._runtime_status_to_model_status(runtime_status)
         container_id = plugin.container_id
 
+        api_token_hash = plugin.api_token_hash
         if runtime_status == 'not_found':
+            # No container left to use the token.
             container_id = ''
+            api_token_hash = ''
 
-        if plugin.status != mapped_status or plugin.container_id != container_id:
+        if (plugin.status, plugin.container_id, plugin.api_token_hash) != (mapped_status, container_id, api_token_hash):
             plugin.status = mapped_status
             plugin.container_id = container_id
-            plugin.save(update_fields=['status', 'container_id', 'updated_at'])
+            plugin.api_token_hash = api_token_hash
+            plugin.save(update_fields=['status', 'container_id', 'api_token_hash', 'updated_at'])
 
         return True, runtime_status
 

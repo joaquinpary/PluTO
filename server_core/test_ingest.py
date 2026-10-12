@@ -74,7 +74,7 @@ class BuildDocumentFieldsTests(SimpleTestCase):
         self.assertEqual(fields['ingest_topic'], 'plugin/3f2a-uuid/data/tracking')
 
     def test_plugin_id_from_topic_wins_over_envelope(self):
-        with self.assertLogs(LOGGER, level='WARNING'):
+        with self.assertLogs('server_core.ingest', level='WARNING'):
             fields = build_document_fields(
                 'plugin/real-uuid/data/tracking',
                 envelope(plugin_id='spoofed-uuid'),

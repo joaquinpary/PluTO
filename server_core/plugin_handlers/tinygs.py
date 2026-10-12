@@ -33,6 +33,9 @@ _NUMERIC_SETTINGS = {
 
 
 class TinyGSHandler(BasePluginHandler):
+    # One per topic the plugin relays from the board (plugins/tinygs/mqtt_handler.py).
+    allowed_message_types = ("tracking", "rx")
+
     def validate(self, config):
         device = config.get("tinygs_device")
 

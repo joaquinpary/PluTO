@@ -86,13 +86,15 @@ class PluginOrchestrator:
             logger.error(f"Docker API error while checking image '{image_name}': {exc}")
             return False, f"Docker API error while checking image for '{plugin_type}': {exc}"
 
-    def spawn_plugin(self, plugin_type, instance_id, station_coordinates, **kwargs):
+    def spawn_plugin(self, plugin_type, instance_id, station_coordinates, api_token=None, rotor_device_id=None, **kwargs):
         """
         Spawns an isolated container for a specific plugin.
         
         Parameters:
         - plugin_type: 'tinygs' or 'file_tracker' (matches your directory tree)
         - instance_id: A unique identifier (e.g. database ID)
+        - api_token: the plain token the container sends to /api/ (see api_tokens.py)
+        - rotor_device_id: device_id of the board bound to the instance, if any
         - kwargs: Additional environment variables (e.g. FILE_PATH)
         """
         handler = PLUGIN_HANDLERS.get(plugin_type)
@@ -131,7 +133,14 @@ class PluginOrchestrator:
             "STATION_LAT": str(normalized_station["lat"]),
             "STATION_LON": str(normalized_station["lon"]),
             "STATION_ALT": str(normalized_station["alt"]),
+            "PLUTO_API_URL": settings.PLUTO_API_URL,
         }
+        if api_token:
+            environment["PLUTO_API_TOKEN"] = api_token
+        # Only a plugin with a board listens to one; without it the plugin
+        # produces data and nothing else.
+        if rotor_device_id:
+            environment["ROTOR_DEVICE_ID"] = rotor_device_id
 
         error = handler.validate(kwargs)
         if error:

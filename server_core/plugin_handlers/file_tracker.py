@@ -46,6 +46,9 @@ def build_file_message(config, filename, content):
 
 
 class FileTrackerHandler(BasePluginHandler):
+    # It only publishes coordinates; it has no data of its own to store.
+    allowed_message_types = ()
+
     def validate(self, config):
         coord_type = config.get("coord_type")
         coord_format = config.get("coord_format")
