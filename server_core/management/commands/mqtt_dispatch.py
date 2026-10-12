@@ -4,9 +4,8 @@ The hop that was missing between a tracking plugin and the antenna. It listens
 for az/el trajectories, cuts them where they leave the rotor's limits, plans the
 overlapping batches with coord_dto and publishes each one at its own instant.
 
-Runs as its own container from the server image, like mqtt_ingest and for the
-same reason: loop_forever() under runserver would be duplicated by the
-autoreloader. The wire format is docs/contracts/coordinates-dto.md.
+Runs as its own container from the server image: loop_forever() under
+runserver would be duplicated by the autoreloader. The wire format is docs/contracts/coordinates-dto.md.
 """
 import logging
 import os

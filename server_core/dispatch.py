@@ -4,7 +4,7 @@ The pure half of the mqtt_dispatch command: parsing what coord_transform
 publishes, merging it with whatever is already pending for a rotor, cutting it
 where it leaves the rotor's limits and planning the batches. Everything that can
 be tested without MQTT or threads lives here, next to the command that calls it,
-the same way device_state.py sits beside mqtt_ingest.
+the same way device_state.py sits beside the API views.
 
 The wire format it feeds is docs/contracts/coordinates-dto.md; section numbers
 below refer to that document.
@@ -58,7 +58,7 @@ def _point_time(value):
         return None
 
     if parsed.tzinfo is None:
-        # Same rule as the ingester: a timestamp without an offset is UTC.
+        # Same rule as ingest.py: a timestamp without an offset is UTC.
         parsed = parsed.replace(tzinfo=timezone.utc)
 
     return to_epoch_ms(parsed)

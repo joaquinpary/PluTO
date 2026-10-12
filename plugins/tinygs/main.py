@@ -4,6 +4,7 @@ import os
 import sys
 
 from mqtt_handler import TinyGSMQTTClient
+from pluto_sdk import ConfigurationError, from_environment
 from tle import TleCache
 from tracker import Tracker
 
@@ -65,7 +66,6 @@ def main():
     # INSTANCE_ID is already injected into every plugin by the orchestrator.
     plugin_id = (os.environ.get("PLUGIN_ID") or os.environ.get("INSTANCE_ID", "")).strip()
     plugin_type = os.environ.get("PLUGIN_TYPE", "tinygs")
-    topic_base = os.environ.get("MQTT_DATA_TOPIC_BASE", "").strip()
     topic_prefix = os.environ.get("TINYGS_TOPIC_PREFIX", "").strip() or "pluto"
     # Every plugin gets plugin/<uuid>/coordinates/raw from the orchestrator:
     # the math engine is always in the path, even for a pass that is already
@@ -77,12 +77,6 @@ def main():
         # must fail visibly, not silently listen to every device on the bus.
         logger.error("TINYGS_DEVICE is required and was not provided.")
         return 1
-
-    if not topic_base:
-        if not plugin_id:
-            logger.error("Either PLUGIN_ID/INSTANCE_ID or MQTT_DATA_TOPIC_BASE is required.")
-            return 1
-        topic_base = f"plugin/{plugin_id}/data"
 
     if not coordinates_topic:
         if not plugin_id:
@@ -100,13 +94,22 @@ def main():
         return 1
 
     try:
+        api, bridge = from_environment()
+    except ConfigurationError as exc:
+        logger.error("%s", exc)
+        return 1
+    if bridge is not None:
+        logger.info("Forwarding the reports of board %s", bridge.device_id)
+
+    try:
         mqtt_client = TinyGSMQTTClient(
             broker_url=broker_url,
             broker_port=broker_port,
             device_id=device_id,
             plugin_id=plugin_id,
             plugin_type=plugin_type,
-            publish_topic_base=topic_base,
+            api=api,
+            bridge=bridge,
             username=broker_user,
             password=broker_pass,
             topic_prefix=topic_prefix,

@@ -4,7 +4,7 @@ The tracking message arrives retained, again on every reconnect of the station,
 and every 15 minutes as a heartbeat even when nothing changed. Acting on each
 one would mean asking CelesTrak and republishing the same pass over and over.
 And the work cannot run on paho's network thread: a slow download there would
-also stall the rx republishing this plugin already owes the ingester.
+also stall the rx forwarding this plugin already owes the server.
 """
 import json
 import logging

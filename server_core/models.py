@@ -80,9 +80,7 @@ class PluginInstance(models.Model):
         }
 
 class PluginData(models.Model):
-    """One row per message a plugin sent: POST /api/plugin-data/<type>, or the
-    older plugin/<plugin_uuid>/data/<type> topic that mqtt_ingest still reads.
-    """
+    """One row per envelope a plugin sent to POST /api/plugin-data/<type>."""
     # PROTECT: a plugin that already produced data is stopped, not deleted,
     # so its history keeps pointing at a real instance.
     plugin = models.ForeignKey(PluginInstance, on_delete=models.PROTECT, related_name='data')
@@ -95,7 +93,7 @@ class PluginData(models.Model):
     payload = models.JSONField(default=dict)
 
     # Tracing: message_id correlates the plugin log line with this row and lets
-    # the ingester drop QoS 1 redeliveries; received_at is when the plugin saw
+    # the API answer a retried request as a duplicate; received_at is when the plugin saw
     # the message and created_at when it was persisted.
     message_id = models.TextField(unique=True, null=True, blank=True)
     source_topic = models.TextField(blank=True)
@@ -116,10 +114,11 @@ class PluginData(models.Model):
 class Rotor(models.Model):
     """An ESP32 driving a pan-tilt, known by the device_id of its MQTT topics.
 
-    The row is created the first time the server hears of the board: a scan of
-    the retained device/<device_id>/status messages (POST /api/boards/scan), or
-    a report on device/<device_id>/status|state (docs/contracts/device-state.md).
-    Either way a new board shows up without being registered by hand.
+    The row is created the first time the server hears of the board, from a
+    scan of the retained device/<device_id>/status messages (POST
+    /api/boards/scan), so a new board shows up without being registered by
+    hand. Its reports then arrive through the plugin it is bound to
+    (POST /api/device/status|state, docs/contracts/device-state.md).
     """
     device_id = models.CharField(
         max_length=12,

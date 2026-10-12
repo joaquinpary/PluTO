@@ -5,10 +5,13 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY requirements.txt ./
+# Built with plugins/ as the context (see orchestrator.py), so the shared
+# pluto_sdk can be copied next to the plugin's own modules.
+COPY file_tracker/requirements.txt ./
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY _sdk/pluto_sdk/ ./pluto_sdk/
+COPY file_tracker/ .
 
 CMD ["python", "main.py"]

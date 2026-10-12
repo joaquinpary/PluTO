@@ -1,4 +1,8 @@
+import os
 from unittest.mock import patch
+
+import docker
+from django.conf import settings
 
 from django.test import SimpleTestCase, override_settings
 
@@ -64,3 +68,16 @@ class PluginOrchestratorTests(SimpleTestCase):
         environment = client.containers.run.call_args.kwargs['environment']
         self.assertNotIn('ROTOR_DEVICE_ID', environment)
         self.assertNotIn('PLUTO_API_TOKEN', environment)
+
+    def test_plugin_images_are_built_from_plugins_so_they_get_the_sdk(self):
+        with patch('server_core.orchestrator.docker.DockerClient') as client_cls:
+            client = client_cls.return_value
+            client.images.get.side_effect = docker.errors.ImageNotFound('missing')
+
+            ok, image = PluginOrchestrator()._build_image_if_needed('file_tracker')
+
+        self.assertTrue(ok)
+        self.assertEqual(image, 'pluto/plugin-file-tracker:latest')
+        kwargs = client.images.build.call_args.kwargs
+        self.assertEqual(kwargs['path'], os.path.join(settings.BASE_DIR, 'plugins'))
+        self.assertEqual(kwargs['dockerfile'], os.path.join('file_tracker', 'Dockerfile'))

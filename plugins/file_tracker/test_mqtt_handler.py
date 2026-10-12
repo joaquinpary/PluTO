@@ -57,6 +57,24 @@ class FileTrackerMQTTClientTests(unittest.TestCase):
 
         self.paho.publish.assert_not_called()
 
+    def test_without_a_board_it_subscribes_to_its_input_only(self):
+        self.handler.on_connect(self.paho, None, None, SimpleNamespace(is_failure=False), None)
+
+        self.paho.subscribe.assert_called_once_with([('plugin/3f2a/input/file', 1)])
+
+    def test_with_a_board_it_forwards_the_board_reports(self):
+        bridge = MagicMock()
+        bridge.subscriptions.return_value = [('device/a1b2c3d4e5f6/status', 1), ('device/a1b2c3d4e5f6/state', 0)]
+        bridge.handles.side_effect = lambda topic: topic.startswith('device/')
+        self.handler.bridge = bridge
+
+        self.handler.on_connect(self.paho, None, None, SimpleNamespace(is_failure=False), None)
+        self.handler.on_message(self.paho, None, SimpleNamespace(topic='device/a1b2c3d4e5f6/status', payload=b'online'))
+
+        self.assertIn(('device/a1b2c3d4e5f6/status', 1), self.paho.subscribe.call_args.args[0])
+        bridge.forward.assert_called_once_with('device/a1b2c3d4e5f6/status', b'online')
+        self.paho.publish.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

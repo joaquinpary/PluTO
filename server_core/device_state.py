@@ -1,7 +1,9 @@
 """What the boards report about themselves (docs/contracts/device-state.md).
 
-Pure parsing plus the ORM writes, called by the mqtt_ingest command for the
-device/<device_id>/status and device/<device_id>/state topics.
+Pure parsing plus the ORM writes for what the board publishes on
+device/<device_id>/status and device/<device_id>/state. The plugin bound to the
+board forwards both to /api/device/... (server_core/api.py), and the board scan
+reads the retained status directly (board_scan.py).
 """
 import json
 import logging
@@ -45,8 +47,9 @@ def store_status(device_id, payload):
         return False
 
     rotor, _ = Rotor.objects.get_or_create(device_id=device_id)
-    # The status is retained, so it comes again on every reconnect of the
-    # ingester: only a real change moves status_changed_at.
+    # The status is retained, so it comes again on every reconnection of the
+    # plugin that forwards it and on every scan: only a real change moves
+    # status_changed_at.
     if rotor.online != online or rotor.status_changed_at is None:
         rotor.online = online
         rotor.status_changed_at = django_timezone.now()

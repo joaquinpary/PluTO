@@ -1,12 +1,9 @@
 import json
 from datetime import datetime, timezone
-from types import SimpleNamespace
-from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase
 
 from .device_state import parse_device_topic, store_state, store_status
-from .management.commands.mqtt_ingest import Command
 from .models import Rotor, RotorState
 
 DEVICE_ID = 'a1b2c3d4e5f6'
@@ -125,34 +122,3 @@ class StoreStateTests(TestCase):
             with self.subTest(payload=payload), self.assertLogs('server_core.device_state', level='WARNING'):
                 self.assertFalse(store_state(DEVICE_ID, payload))
         self.assertFalse(Rotor.objects.exists())
-
-
-@patch('server_core.management.commands.mqtt_ingest.close_old_connections')
-class DeviceMessageRoutingTests(TestCase):
-    def setUp(self):
-        self.command = Command()
-        self.command.stats = {'ingested': 0, 'duplicate': 0, 'device_updates': 0, 'rejected': 0, 'failed': 0}
-
-    def deliver(self, topic, payload):
-        self.command.on_message(None, None, SimpleNamespace(topic=topic, payload=payload))
-
-    def test_status_and_state_reach_the_database(self, _close):
-        self.deliver(f'device/{DEVICE_ID}/status', b'online')
-        self.deliver(f'device/{DEVICE_ID}/state', state())
-
-        self.assertTrue(Rotor.objects.get().online)
-        self.assertEqual(RotorState.objects.count(), 1)
-        self.assertEqual(self.command.stats['device_updates'], 2)
-
-    def test_unexpected_device_topics_are_rejected(self, _close):
-        with self.assertLogs('server_core.management.commands.mqtt_ingest', level='WARNING'):
-            self.deliver('device/subscription', DEVICE_ID.encode())
-
-        self.assertEqual(self.command.stats['rejected'], 1)
-        self.assertFalse(Rotor.objects.exists())
-
-    def test_an_invalid_state_counts_as_rejected(self, _close):
-        with self.assertLogs('server_core.device_state', level='WARNING'):
-            self.deliver(f'device/{DEVICE_ID}/state', b'not json')
-
-        self.assertEqual(self.command.stats['rejected'], 1)

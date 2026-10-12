@@ -1,0 +1,3 @@
+# Every plugin image is built with plugins/ as its context.
+**/__pycache__
+**/*.pyc
