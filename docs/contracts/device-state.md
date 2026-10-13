@@ -122,7 +122,7 @@ Hay un código por cada regla de [`coordinates-dto.md`](coordinates-dto.md):
   `POST /api/device/status` y `/api/device/state`
   ([`ingest-api.md`](ingest-api.md) §4). La placa no cambia nada.
 - El servidor descubre las placas leyendo los `status` retenidos (`POST
-  /api/boards/scan`, [`ingest-api.md`](ingest-api.md) §6), y ahí crea su `Rotor`, sin
+  /api/boards/scan`, [`ingest-api.md`](ingest-api.md) §7), y ahí crea su `Rotor`, sin
   alta manual. `status` actualiza `online`, y como el mensaje es retenido y se repite en
   cada reconexión del plugin y en cada escaneo, solo un cambio real mueve la fecha del
   cambio.

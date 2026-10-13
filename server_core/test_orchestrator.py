@@ -31,7 +31,7 @@ class PluginOrchestratorTests(SimpleTestCase):
         self.assertEqual(environment['MQTT_USERNAME'], 'user')
         self.assertEqual(environment['MQTT_PASSWORD'], 'secret')
 
-    @override_settings(PLUTO_API_URL='http://server:8000/api/')
+    @override_settings(PLUTO_API_URL='http://server:8000/api/', PLUTO_TRANSFORM_URL='http://coord_transform:8000/')
     def test_plugins_get_the_api_url_their_token_and_their_board(self):
         with patch('server_core.orchestrator.docker.DockerClient') as client_cls:
             client = client_cls.return_value
@@ -48,6 +48,7 @@ class PluginOrchestratorTests(SimpleTestCase):
 
         environment = client.containers.run.call_args.kwargs['environment']
         self.assertEqual(environment['PLUTO_API_URL'], 'http://server:8000/api/')
+        self.assertEqual(environment['PLUTO_TRANSFORM_URL'], 'http://coord_transform:8000/')
         self.assertEqual(environment['PLUTO_API_TOKEN'], 'secret-token')
         self.assertEqual(environment['ROTOR_DEVICE_ID'], 'a1b2c3d4e5f6')
         # Neither is plugin configuration, so neither goes through the handler.

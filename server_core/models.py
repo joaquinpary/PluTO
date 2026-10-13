@@ -228,6 +228,8 @@ class DispatchOrder(models.Model):
         END     = 'end',     'Trajectory ended'
         LIMITS  = 'limits',  'Left the rotor limits'
         EXPIRED = 'expired', 'Every point had already expired'
+        # The plugin driving the rotor was stopped: it holds the antenna on its way out.
+        STOPPED = 'stopped', 'The plugin was stopped'
 
     # PROTECT on both: a plugin or a rotor with history is stopped, not deleted,
     # so the pointing record keeps pointing at rows that exist.

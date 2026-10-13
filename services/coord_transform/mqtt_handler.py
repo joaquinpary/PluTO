@@ -2,8 +2,8 @@ import logging
 import json
 import paho.mqtt.client as mqtt
 from pydantic import ValidationError
-from models import RawCoordinatesPayload, PolarCoordinatesPayload
-from transformer import transform_coordinates
+from models import RawCoordinatesPayload
+from transformer import transform_payload
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,20 @@ class CoordinateTransformMQTTClient:
         logger.info(f"Connecting to MQTT broker at {self.broker_url}:{self.broker_port}")
         self.client.connect(self.broker_url, self.broker_port, 60)
         self.client.loop_forever()
+
+    def start_in_background(self):
+        """Run the MQTT side on paho's own thread, so POST /transform owns the main one.
+
+        connect_async rather than connect: the HTTP side has to come up even
+        when the broker is not there yet, and paho keeps retrying on its own.
+        """
+        logger.info(f"Connecting to MQTT broker at {self.broker_url}:{self.broker_port} in the background")
+        self.client.connect_async(self.broker_url, self.broker_port, 60)
+        self.client.loop_start()
+
+    def stop(self):
+        self.client.disconnect()
+        self.client.loop_stop()
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         if not reason_code.is_failure:
@@ -51,17 +65,8 @@ class CoordinateTransformMQTTClient:
             # Validar y parsear JSON con Pydantic
             raw_payload = RawCoordinatesPayload.model_validate_json(payload_str)
             
-            # Transformar
-            polar_points = []
-            for pt in raw_payload.coordinates:
-                polar_pt = transform_coordinates(pt, raw_payload.station, raw_payload.type, raw_payload.coord_format)
-                polar_points.append(polar_pt)
-                
-            # Construir payload de salida
-            polar_payload = PolarCoordinatesPayload(
-                station=raw_payload.station,
-                coordinates=polar_points
-            )
+            polar_payload = transform_payload(raw_payload)
+            polar_points = polar_payload.coordinates
             
             # Publicar
             out_topic = f"plugin/{instance_id}/coordinates/polar"

@@ -95,6 +95,8 @@ MQTT_CONFIG = {
 # that host in their requests, so it has to be allowed whatever
 # DJANGO_ALLOWED_HOSTS says, or every plugin request gets a 400.
 PLUTO_API_URL = config('PLUTO_API_URL', default='http://server:8000/api/')
+# Where plugins reach coord_transform's POST /transform (docs/contracts/transform-api.md).
+PLUTO_TRANSFORM_URL = config('PLUTO_TRANSFORM_URL', default='http://coord_transform:8000/')
 _api_host = urlsplit(PLUTO_API_URL).hostname
 if _api_host and _api_host not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_api_host)

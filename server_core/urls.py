@@ -9,6 +9,8 @@ urlpatterns = [
     path('plugin-data/<str:message_type>', api.PluginDataView.as_view(), name='api-plugin-data'),
     path('device/status', api.DeviceStatusView.as_view(), name='api-device-status'),
     path('device/state', api.DeviceStateView.as_view(), name='api-device-state'),
+    path('plugin/rotor', api.PluginRotorView.as_view(), name='api-plugin-rotor'),
+    path('dispatch-orders', api.DispatchOrdersView.as_view(), name='api-dispatch-orders'),
     # The user's session: log in, refresh, log out (blacklists the refresh token).
     path('auth/token', TokenObtainPairView.as_view(), name='api-token'),
     path('auth/token/refresh', TokenRefreshView.as_view(), name='api-token-refresh'),

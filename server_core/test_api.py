@@ -11,7 +11,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .api import MAX_BATCH, MAX_ENVELOPE_BYTES
 from .api_tokens import TOKEN_PREFIX, hash_token, issue_token
 from .board_scan import BrokerUnavailable, record_status, scan_boards
-from .models import PluginData, PluginInstance, Rotor, RotorState
+from .models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
 from .plugin_handlers import PLUGIN_HANDLERS
 
 DEVICE_ID = 'a1b2c3d4e5f6'
@@ -514,6 +514,104 @@ class ScanBoardsTests(SimpleTestCase):
     def test_a_refused_connection_raises(self):
         with self.assertRaises(BrokerUnavailable):
             self.scan(FakeClient(connect_code=5))
+
+
+class PluginRotorTests(TestCase):
+    def get(self, token):
+        return self.client.get('/api/plugin/rotor', HTTP_AUTHORIZATION=f'Plugin {token}')
+
+    def test_returns_the_bound_board_and_its_limits(self):
+        rotor = Rotor.objects.create(device_id=DEVICE_ID, min_elevation_deg=12.5,
+                                     min_azimuth_deg=300.0, max_azimuth_deg=60.0)
+        _, token = running_plugin(rotor=rotor)
+
+        response = self.get(token)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            'device_id': DEVICE_ID, 'min_elevation_deg': 12.5,
+            'min_azimuth_deg': 300.0, 'max_azimuth_deg': 60.0,
+        })
+
+    def test_without_a_board_it_is_null(self):
+        _, token = running_plugin()
+
+        response = self.get(token)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json())
+
+    def test_needs_a_plugin_token(self):
+        self.assertEqual(self.client.get('/api/plugin/rotor').status_code, 401)
+
+
+def order(**overrides):
+    document = {'kind': 'BATCH', 't0_ms': 1789763400000, 't_sent_ms': 1789763398012,
+                'points': [[0, 27000, 3000], [1000, 27050, 3010]], 'reason': ''}
+    document.update(overrides)
+    return document
+
+
+HOLD = {'kind': 'HOLD', 't0_ms': 1789763712000, 't_sent_ms': 1789763712000, 'points': [], 'reason': 'limits'}
+
+
+class DispatchOrdersTests(TestCase):
+    def setUp(self):
+        self.rotor = Rotor.objects.create(device_id=DEVICE_ID)
+        self.plugin, self.token = running_plugin(rotor=self.rotor)
+
+    def post(self, body, token=None):
+        return self.client.post('/api/dispatch-orders', data=json.dumps(body), content_type='application/json',
+                                HTTP_AUTHORIZATION=f'Plugin {token or self.token}')
+
+    def test_stores_a_batch_under_the_bound_board(self):
+        response = self.post(order())
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json(), {'stored': 1})
+        row = DispatchOrder.objects.get()
+        self.assertEqual((row.rotor, row.plugin, row.kind), (self.rotor, self.plugin, 'BATCH'))
+        self.assertEqual(row.points, [[0, 27000, 3000], [1000, 27050, 3010]])
+        # The instant the batch covers up to, as mqtt_dispatch records it.
+        self.assertEqual(row.t_end_ms, 1789763401000)
+
+    def test_a_list_is_stored_whole(self):
+        response = self.post([order(), HOLD, dict(HOLD, reason='stopped')])
+
+        self.assertEqual(response.json(), {'stored': 3})
+        self.assertEqual(list(DispatchOrder.objects.order_by('pk').values_list('kind', 'reason')),
+                         [('BATCH', ''), ('HOLD', 'limits'), ('HOLD', 'stopped')])
+
+    def test_one_bad_order_rejects_the_whole_list(self):
+        response = self.post([order(), order(points=[])])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(DispatchOrder.objects.exists())
+
+    def test_orders_must_have_the_shape_the_board_accepts(self):
+        for bad in (
+            order(points=[]),                                  # a batch without points
+            dict(HOLD, points=[[0, 0, 0]]),                    # a HOLD with points
+            dict(HOLD, reason=''),                             # a HOLD without a reason
+            order(points=[[0, 36000, 0]]),                     # azimuth out of range
+            order(points=[[0, 0, 9001]]),                      # elevation out of range
+            order(points=[[0, 0]]),                            # a point is three numbers
+            order(points=[[index * 1000, 0, 0] for index in range(17)]),  # more than 16
+            order(kind='MOVE'),
+            order(reason='bored'),
+        ):
+            with self.subTest(order=bad):
+                self.assertEqual(self.post(bad).status_code, 400)
+        self.assertFalse(DispatchOrder.objects.exists())
+
+    def test_an_instance_without_a_board_is_forbidden(self):
+        _, token = running_plugin(name='no-board')
+
+        self.assertEqual(self.post(order(), token=token).status_code, 403)
+
+    def test_a_list_has_a_size_limit(self):
+        self.assertEqual(self.post([]).status_code, 400)
+        self.assertEqual(self.post([order()] * (MAX_BATCH + 1)).status_code, 400)
 
 
 class SchemaTests(TestCase):

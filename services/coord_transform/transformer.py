@@ -9,6 +9,8 @@ from models import (
     CartesianCoordinatePoint,
     GeoCoordinatePoint,
     PolarCoordinatePoint,
+    PolarCoordinatesPayload,
+    RawCoordinatesPayload,
     Station,
     CoordinateType,
     CoordinateFormat
@@ -130,3 +132,15 @@ def transform_coordinates(
         return transform_enu_polar_to_polar(point, station)
     else:
         raise ValueError(f"Tipo de coordenada no soportado: {coord_type} - {coord_format}")
+
+
+def transform_payload(raw: RawCoordinatesPayload) -> PolarCoordinatesPayload:
+    """A whole raw payload to az/el. The one entry point both POST /transform and
+    the MQTT handler go through, so the two can never disagree."""
+    return PolarCoordinatesPayload(
+        station=raw.station,
+        coordinates=[
+            transform_coordinates(point, raw.station, raw.type, raw.coord_format)
+            for point in raw.coordinates
+        ],
+    )
