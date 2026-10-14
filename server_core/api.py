@@ -14,6 +14,8 @@ import json
 import logging
 
 from django.conf import settings
+from django.db import transaction
+from django.http import JsonResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
@@ -25,11 +27,14 @@ from rest_framework.views import APIView
 from .authentication import IsPluginInstance, PluginTokenAuthentication
 from .board_scan import BrokerUnavailable, scan_boards
 from .device_state import store_state, store_status
+from .dispatch import record_order
 from .ingest import DUPLICATE, MESSAGE_TYPE_RE, envelope_fields, store_document
 from .models import PluginInstance, Rotor
 from .plugin_handlers import PLUGIN_HANDLERS
 from .serializers import (
     BatchResultSerializer,
+    DispatchOrderSerializer,
+    RotorLimitsSerializer,
     BindBoardSerializer,
     BoardSerializer,
     DeviceReportResultSerializer,
@@ -186,6 +191,65 @@ class DeviceStateView(DeviceReportView):
 
     def post(self, request):
         return super().post(request)
+
+
+class PluginRotorView(PluginView):
+    @extend_schema(
+        summary='The board bound to the calling instance and its pointing limits',
+        description=(
+            'null when no board is bound. A plugin asks before planning each trajectory, '
+            'so a change of limits applies from the next one.'
+        ),
+        responses={200: RotorLimitsSerializer},
+    )
+    def get(self, request):
+        rotor = request.auth.rotor
+        if rotor is None:
+            # DRF renders a None body as empty; the contract says a JSON null.
+            return JsonResponse(None, safe=False)
+        return Response(RotorLimitsSerializer(rotor).data)
+
+
+class DispatchOrdersView(PluginView):
+    parser_classes = [JSONParser]
+
+    @extend_schema(
+        summary='Record what the plugin sent to its board',
+        description=(
+            'One order or a list of up to 100. Each becomes a DispatchOrder of the board '
+            'bound to the instance, the record the pointing error is measured against.'
+        ),
+        request=DispatchOrderSerializer(many=True),
+        responses={
+            201: OpenApiResponse(description='{"stored": n}'),
+            400: OpenApiResponse(description='An order that is not a valid BATCH or HOLD.'),
+            403: OpenApiResponse(description='The instance has no board bound to it.'),
+        },
+    )
+    def post(self, request):
+        plugin = request.auth
+        rotor = plugin.rotor
+        if rotor is None:
+            raise PermissionDenied('This plugin instance has no board bound to it.')
+
+        _reject_oversized_body(request)
+        many = isinstance(request.data, list)
+        if many and not 1 <= len(request.data) <= MAX_BATCH:
+            return Response({'detail': f'A batch carries between 1 and {MAX_BATCH} orders.'}, status=400)
+
+        # All or nothing: a half-stored list would leave a gap the plugin
+        # cannot tell from the response which orders to resend for.
+        serializer = DispatchOrderSerializer(data=request.data, many=many)
+        serializer.is_valid(raise_exception=True)
+        orders = serializer.validated_data if many else [serializer.validated_data]
+
+        with transaction.atomic():
+            for order in orders:
+                record_order(
+                    rotor, plugin, order['kind'], order['t0_ms'], order['t_sent_ms'],
+                    order['points'], order['reason'],
+                )
+        return Response({'stored': len(orders)}, status=201)
 
 
 # --- Front end ---------------------------------------------------------------

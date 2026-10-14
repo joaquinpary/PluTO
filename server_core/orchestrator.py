@@ -141,6 +141,7 @@ class PluginOrchestrator:
             "STATION_LON": str(normalized_station["lon"]),
             "STATION_ALT": str(normalized_station["alt"]),
             "PLUTO_API_URL": settings.PLUTO_API_URL,
+            "PLUTO_TRANSFORM_URL": settings.PLUTO_TRANSFORM_URL,
         }
         if api_token:
             environment["PLUTO_API_TOKEN"] = api_token

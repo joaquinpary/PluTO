@@ -2,3 +2,7 @@ pydantic>=2.0.0
 skyfield>=1.46
 numpy>=1.20
 paho-mqtt==2.1.0
+fastapi==0.143.0
+uvicorn==0.54.0
+# Only for fastapi.testclient in the tests.
+httpx==0.28.1

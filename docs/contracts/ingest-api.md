@@ -17,8 +17,8 @@ como `{"detail": "…"}`, salvo los de validación de un campo (`{"device_id": [
 
 | cliente | autenticación | endpoints |
 |---|---|---|
-| contenedor de un plugin | `Authorization: Plugin <token>` de su instancia (§2) | §3 y §4 |
-| la persona que usa PluTO, desde el front | `Authorization: Bearer <jwt>` (§5) | §6 |
+| contenedor de un plugin | `Authorization: Plugin <token>` de su instancia (§2) | §3, §4 y §5 |
+| la persona que usa PluTO, desde el front | `Authorization: Bearer <jwt>` (§6) | §7 |
 
 Cada endpoint acepta uno solo de los dos: un token de plugin en un endpoint del front, o
 un JWT en uno de plugins, no se lee y la respuesta es `401`. PluTO tiene un único usuario,
@@ -28,9 +28,11 @@ así que no hay roles ni permisos por usuario: alcanza con estar logueado.
 
 - Al lanzar un plugin, el servidor genera un token nuevo (`pluto_…`) y se lo pasa al
   contenedor como `PLUTO_API_TOKEN`, junto con `PLUTO_API_URL` (por defecto
-  `http://server:8000/api/`). En la base solo queda su sha256.
+  `http://server:8000/api/`) y `PLUTO_TRANSFORM_URL` (por defecto
+  `http://coord_transform:8000/`, [`transform-api.md`](transform-api.md)). En la base solo
+  queda su sha256.
 - Al detenerlo, el hash se borra. Un contenedor que siga corriendo recibe `401`.
-- **El token decide la instancia, y la instancia decide la placa.** Ninguna URL de §3 y §4
+- **El token decide la instancia, y la instancia decide la placa.** Ninguna URL de §3 a §5
   lleva un `plugin_id` ni un `device_id`. Un `plugin_id` distinto dentro del envelope se
   ignora y queda en el log.
 - Si la instancia tiene placa vinculada, el contenedor también recibe `ROTOR_DEVICE_ID`
@@ -106,7 +108,55 @@ en [`device-state.md`](device-state.md): `status` es el texto `online` u `offlin
 | `401` | como en §3 |
 | `403` | la instancia no tiene placa vinculada |
 
-## 5. Login del front (JWT)
+## 5. Apuntamiento: `GET /api/plugin/rotor` y `POST /api/dispatch-orders`
+
+Lo que necesita un plugin para apuntar su placa sin pasar por `mqtt_dispatch`.
+
+### `GET /api/plugin/rotor`
+
+La placa vinculada a la instancia y sus límites de apuntamiento, o `null` si no tiene.
+El plugin lo pide antes de planificar cada trayectoria, así que un cambio de límites se
+aplica desde la próxima, igual que con `mqtt_dispatch`.
+
+```json
+{ "device_id": "a1b2c3d4e5f6", "min_elevation_deg": 10.0,
+  "min_azimuth_deg": 300.0, "max_azimuth_deg": 60.0 }
+```
+
+`min_azimuth_deg` y `max_azimuth_deg` son `null` los dos cuando no hay ventana de azimut.
+Una ventana con el inicio mayor que el fin pasa por el norte (de 300° a 60°).
+
+### `POST /api/dispatch-orders`
+
+Lo que el plugin publicó en `device/<device_id>/coordinates/polar`
+([`coordinates-dto.md`](coordinates-dto.md)): una orden o una lista de 1 a 100. Cada una
+es una fila de `DispatchOrder` de la placa vinculada; con el `state` que reporta la placa
+se mide el error de apuntamiento y la latencia.
+
+```json
+[{ "kind": "BATCH", "t0_ms": 1789763400000, "t_sent_ms": 1789763398012,
+   "points": [[0, 27000, 3000], [1000, 27050, 3010]], "reason": "" },
+ { "kind": "HOLD", "t0_ms": 1789763712000, "t_sent_ms": 1789763712000,
+   "points": [], "reason": "limits" }]
+```
+
+- `points` son `[dt_ms, az_cdeg, el_cdeg]` con los rangos de §3.2 del DTO, hasta 16.
+- Un `BATCH` lleva al menos un punto. Un `HOLD` no lleva puntos y dice por qué:
+  `end` (terminó la trayectoria), `limits` (salió de los límites), `expired` (todos los
+  puntos ya habían pasado) o `stopped` (se detuvo el plugin).
+- `t_sent_ms` es el instante en que el plugin publicó, no en que reporta: la orden puede
+  llegar a la base más tarde sin cambiar la medición de latencia.
+- La lista se guarda entera o nada: una orden inválida rechaza todas, así el plugin sabe
+  qué reenviar.
+
+| código | cuándo |
+|---|---|
+| `201` | guardadas: `{"stored": n}` |
+| `400` | una orden que no es un `BATCH` o un `HOLD` válido, o una lista vacía o de más de 100 |
+| `401` | como en §3 |
+| `403` | la instancia no tiene placa vinculada |
+
+## 6. Login del front (JWT)
 
 | endpoint | cuerpo | respuesta |
 |---|---|---|
@@ -121,7 +171,7 @@ en [`device-state.md`](device-state.md): `status` es el texto `online` u `offlin
 - Para llamar desde un navegador en otro origen (el front en desarrollo), ese origen tiene
   que estar en `CORS_ALLOWED_ORIGINS`.
 
-## 6. Endpoints del front
+## 7. Endpoints del front
 
 ### `GET /api/boards`
 
