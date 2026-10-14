@@ -27,7 +27,7 @@ from rest_framework.views import APIView
 from .authentication import IsPluginInstance, PluginTokenAuthentication
 from .board_scan import BrokerUnavailable, scan_boards
 from .device_state import store_state, store_status
-from .dispatch import record_order
+from .dispatch_orders import record_order
 from .ingest import DUPLICATE, MESSAGE_TYPE_RE, envelope_fields, store_document
 from .models import PluginInstance, Rotor
 from .plugin_handlers import PLUGIN_HANDLERS

@@ -1,8 +1,7 @@
+import unittest
 from datetime import datetime, timezone
 
-from django.test import SimpleTestCase
-
-from .coord_dto import (
+from pluto_sdk.dto import (
     FLAG_HOLD,
     MAX_POINTS,
     az_to_cdeg,
@@ -25,7 +24,7 @@ EXAMPLE_HEX = (
 )
 
 
-class EncodeTests(SimpleTestCase):
+class EncodeTests(unittest.TestCase):
     def test_matches_the_worked_example_of_the_contract(self):
         payload = encode(EXAMPLE_T0_MS, EXAMPLE_T_SENT_MS, EXAMPLE_POINTS)
 
@@ -61,7 +60,7 @@ class EncodeTests(SimpleTestCase):
                 encode(0, 0, points, flags=flags)
 
 
-class ConversionTests(SimpleTestCase):
+class ConversionTests(unittest.TestCase):
     def test_azimuth_rounds_before_wrapping(self):
         for az_deg, expected in ((359.994, 35999), (359.995, 0), (359.999, 0), (-0.001, 0),
                                  (360.0, 0), (123.45, 12345), (-90.0, 27000)):
@@ -86,7 +85,7 @@ def trajectory(count, start_ms=EXAMPLE_T0_MS, step_ms=1000):
     return [(start_ms + i * step_ms, 100.0 + i, 20.0 + i) for i in range(count)]
 
 
-class PlanBatchesTests(SimpleTestCase):
+class PlanBatchesTests(unittest.TestCase):
     def test_batches_overlap_and_the_last_one_reaches_the_end(self):
         batches = plan_batches(trajectory(9))
 
@@ -123,3 +122,7 @@ class PlanBatchesTests(SimpleTestCase):
             plan_batches(trajectory(5), stride=3)  # more than half a batch
         with self.assertRaises(ValueError):
             plan_batches([(0, 0.0, 0.0), (0, 1.0, 1.0)])  # timestamps not increasing
+
+
+if __name__ == '__main__':
+    unittest.main()

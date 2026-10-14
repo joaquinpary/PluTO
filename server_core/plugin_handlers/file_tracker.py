@@ -69,6 +69,5 @@ class FileTrackerHandler(BasePluginHandler):
         environment = super().get_environment(config)
         plugin_id = config.get("plugin_id")
         if plugin_id is not None:
-            environment["MQTT_PUBLISH_TOPIC"] = f"plugin/{plugin_id}/coordinates/raw"
             environment["MQTT_INPUT_TOPIC"] = input_topic(plugin_id)
         return environment

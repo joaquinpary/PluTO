@@ -16,46 +16,66 @@ def upload(upload_id='u-1', content='40 -3 667\n41 2 12\n', coord_type='ECEF', c
 
 class FileTrackerMQTTClientTests(unittest.TestCase):
     def setUp(self):
+        self.antenna = MagicMock()
         self.handler = FileTrackerMQTTClient(
             broker_url='mosquitto', broker_port=1883,
-            input_topic='plugin/3f2a/input/file', publish_topic='plugin/3f2a/coordinates/raw',
-            station=Station(lat=0, lon=0, alt=0),
+            input_topic='plugin/3f2a/input/file',
+            station=Station(lat=0, lon=0, alt=0), antenna=self.antenna,
         )
         self.paho = MagicMock()
 
     def receive(self, payload):
         self.handler.on_message(self.paho, None, SimpleNamespace(topic='plugin/3f2a/input/file', payload=payload))
 
-    def test_an_upload_is_published_as_raw_coordinates(self):
+    def test_an_upload_goes_to_the_antenna_as_a_raw_trajectory(self):
         self.receive(upload())
 
-        topic, body = self.paho.publish.call_args.args
-        self.assertEqual(topic, 'plugin/3f2a/coordinates/raw')
-        self.assertEqual(len(json.loads(body)['coordinates']), 2)
+        (raw,) = self.antenna.submit.call_args.args
+        self.assertEqual((raw['type'], raw['coord_format']), ('ECEF', 'GEO'))
+        self.assertEqual(len(raw['coordinates']), 2)
+        # JSON-ready, as POST /transform takes it.
+        json.dumps(raw)
+        # Nothing goes on the broker any more: the antenna owns the board's topic.
+        self.paho.publish.assert_not_called()
 
-    def test_the_retained_file_is_not_published_again_on_reconnection(self):
+    def test_the_retained_file_is_not_pointed_at_again_on_reconnection(self):
         self.receive(upload())
         self.receive(upload())
 
-        self.assertEqual(self.paho.publish.call_count, 1)
+        self.assertEqual(self.antenna.submit.call_count, 1)
 
-    def test_a_new_upload_is_published(self):
+    def test_a_new_upload_is_pointed_at(self):
         self.receive(upload('u-1'))
         self.receive(upload('u-2'))
 
-        self.assertEqual(self.paho.publish.call_count, 2)
+        self.assertEqual(self.antenna.submit.call_count, 2)
 
     def test_a_bad_file_is_discarded_and_the_next_one_still_works(self):
         self.receive(upload('u-1', content='no coordinates'))
         self.receive(b'not json')
         self.receive(upload('u-2'))
 
-        self.assertEqual(self.paho.publish.call_count, 1)
+        self.assertEqual(self.antenna.submit.call_count, 1)
 
-    def test_a_cleared_file_publishes_nothing(self):
+    def test_a_cleared_file_points_at_nothing(self):
         self.receive(b'')
 
-        self.paho.publish.assert_not_called()
+        self.antenna.submit.assert_not_called()
+
+    def test_without_a_board_a_file_is_parsed_but_not_pointed_at(self):
+        self.handler.antenna = None
+
+        with self.assertLogs('mqtt_handler', level='WARNING'):
+            self.receive(upload())
+
+    def test_a_board_message_goes_with_qos_1_and_is_never_retained(self):
+        self.handler.client = MagicMock()
+
+        self.handler.publish_to_board('device/a1b2c3d4e5f6/coordinates/polar', b'\x50\x01')
+
+        self.handler.client.publish.assert_called_once_with(
+            'device/a1b2c3d4e5f6/coordinates/polar', b'\x50\x01', qos=1, retain=False,
+        )
 
     def test_without_a_board_it_subscribes_to_its_input_only(self):
         self.handler.on_connect(self.paho, None, None, SimpleNamespace(is_failure=False), None)

@@ -5,9 +5,9 @@ Cómo un plugin convierte su trayectoria a azimut y elevación vistos desde la e
 produce y la devuelve en la misma respuesta, lista para planificar los lotes de
 [`coordinates-dto.md`](coordinates-dto.md).
 
-Estado: **v1**, implementado en `services/coord_transform/api.py` (FastAPI). Convive con
-los tópicos `plugin/<uuid>/coordinates/raw` y `/polar` hasta que los plugins pasen a
-llamarlo; los dos caminos usan la misma función (`transform_payload`).
+Estado: **v1**, implementado en `services/coord_transform/api.py` (FastAPI) y usado por
+el SDK de los plugins (`pluto_sdk/transform_client.py`). Reemplaza a los tópicos
+`plugin/<uuid>/coordinates/raw` y `/polar`, que ya no existen.
 
 ## 1. Dónde
 

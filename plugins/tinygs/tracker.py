@@ -1,12 +1,11 @@
-"""Deciding when a new pass is worth computing, and computing it off the bus.
+"""Deciding when a new pass is worth computing, and computing it off the MQTT thread.
 
 The tracking message arrives retained, again on every reconnect of the station,
 and every 15 minutes as a heartbeat even when nothing changed. Acting on each
-one would mean asking CelesTrak and republishing the same pass over and over.
+one would mean asking CelesTrak and pointing at the same pass over and over.
 And the work cannot run on paho's network thread: a slow download there would
 also stall the rx forwarding this plugin already owes the server.
 """
-import json
 import logging
 import threading
 from datetime import datetime, timezone
@@ -39,17 +38,17 @@ def assigned_norad(document):
 
 
 class Tracker:
-    """Turns the satellite the station is following into a pass on coordinates/raw."""
+    """Turns the satellite the station is following into a pass for the antenna."""
 
-    def __init__(self, station, cache, publish, topic, min_elevation_deg=10.0,
+    def __init__(self, station, cache, submit, min_elevation_deg=10.0,
                  lookahead_minutes=20, sample_seconds=1, clock=utc_now, compute=next_pass):
         self.station = station
         self.cache = cache
-        self.topic = topic
         self.min_elevation_deg = min_elevation_deg
         self.lookahead_minutes = lookahead_minutes
         self.sample_seconds = sample_seconds
-        self._publish = publish
+        # pluto_sdk.Antenna.submit: takes the raw pass and returns at once.
+        self._submit = submit
         self._clock = clock
         self._compute = compute
 
@@ -93,7 +92,7 @@ class Tracker:
         return norad
 
     def process(self, norad):
-        """Publish the next pass for norad, unless one is already out. Returns whether it did."""
+        """Hand the next pass of norad to the antenna, unless one is already out. Returns whether it did."""
         # Checked again here and not only when queued: the retained message and
         # the one the station sends on reconnect can land together, before the
         # first pass has been recorded.
@@ -112,11 +111,11 @@ class Tracker:
             logger.info('No pass of %s (%s) starts within %s minutes', tle.name, norad, self.lookahead_minutes)
             return False
 
-        self._publish(self.topic, json.dumps(build_raw_payload(self.station, points)))
+        self._submit(build_raw_payload(self.station, points))
         self.last_norad = norad
         self.last_pass_end = points[-1][0]
         logger.info(
-            'Published a pass of %s (%s): %s points from %s to %s',
+            'Pass of %s (%s) sent to the antenna: %s points from %s to %s',
             tle.name, norad, len(points), points[0][0].isoformat(), points[-1][0].isoformat(),
         )
         return True
