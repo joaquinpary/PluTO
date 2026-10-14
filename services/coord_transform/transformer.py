@@ -135,8 +135,7 @@ def transform_coordinates(
 
 
 def transform_payload(raw: RawCoordinatesPayload) -> PolarCoordinatesPayload:
-    """A whole raw payload to az/el. The one entry point both POST /transform and
-    the MQTT handler go through, so the two can never disagree."""
+    """A whole raw payload to az/el, as POST /transform returns it."""
     return PolarCoordinatesPayload(
         station=raw.station,
         coordinates=[

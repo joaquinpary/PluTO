@@ -11,6 +11,11 @@ comportamiento y de validación, pero el formato en el cable no cambió.
 El canal de vuelta (lo que la placa informa al servidor) está en
 [`device-state.md`](device-state.md).
 
+> **Quién es "el servidor" en este documento.** Es el lado PluTO, el que publica en
+> `device/<device_id>/coordinates/polar`. Concretamente, desde el 2026-10-13 es el plugin
+> vinculado a la placa (`plugins/_sdk/pluto_sdk/dispatcher.py`): planifica y publica los
+> batches, con los límites que le da el backend. Para la placa no cambia nada.
+
 ## 1. Propósito y alcance
 
 El servidor calcula una trayectoria azimut/elevación y se la entrega a la placa por
@@ -347,7 +352,8 @@ mide desde el norte verdadero en sentido horario y la elevación sobre el horizo
 exactamente lo que produce `services/coord_transform`. El mensaje nunca lleva ángulos de
 servo: la misma trayectoria sirve para cualquier montaje.
 
-**El servidor** aplica lo que configura el usuario:
+**El servidor** (el plugin vinculado a la placa, con los límites que guarda el backend)
+aplica lo que configura el usuario:
 
 - los límites de apuntamiento del rotor y el umbral mínimo de elevación (issue #8 de
   PluTO);
@@ -381,7 +387,7 @@ positiva cae en al menos uno.
 > para toda la trayectoria con un bit de `flags` (un cambio compatible, §5). No es parte
 > de v1.
 
-## 10. Envío desde el servidor
+## 10. Envío desde el servidor (el plugin)
 
 Esta sección es orientativa: la placa no depende de ella, pero la cadencia de envío es lo
 que hace funcionar §6.7. Los números son valores de partida.
@@ -400,14 +406,15 @@ que hace funcionar §6.7. Los números son valores de partida.
 ## 11. Pendiente de implementar
 
 Ya están implementados el decoder, la ejecución de §6.7, la conversión a pan-tilt de §9,
-el encoder del servidor y el canal de vuelta; se probaron contra una placa real
-([`device-state.md`](device-state.md) §8). También está implementado el dispatcher del
-servidor —el comando `mqtt_dispatch`, que hace de puente entre
-`plugin/<plugin_uuid>/coordinates/polar` y `device/<device_id>/coordinates/polar` aplicando
-los límites del rotor—, pero todavía no se corrió contra la placa. Falta:
+el encoder y el canal de vuelta; se probaron contra una placa real
+([`device-state.md`](device-state.md) §8). También está implementado el dispatcher, que
+vive en el SDK de los plugins: el plugin vinculado a la placa transforma su trayectoria
+(`POST /transform`), le pide al backend los límites del rotor, publica los batches y
+reporta cada mensaje (`POST /api/dispatch-orders`). Todavía no se corrió contra la placa.
+Falta:
 
-- Servidor: probar el dispatcher de punta a punta contra el hardware. Por ahora tiene sus
-  tests contra un PostgreSQL real, nada más.
+- PluTO: probar el dispatcher de punta a punta contra el hardware. Por ahora tiene sus
+  tests y una prueba contra una placa simulada.
 - Firmware: el driver de los servos, que toma los ángulos que ya calcula la placa.
 - La tolerancia concreta de la regla 6.3, que depende de la dinámica de los motores (hoy
   es configurable, con 500 ms por defecto).
@@ -415,6 +422,9 @@ los límites del rotor—, pero todavía no se corrió contra la placa. Falta:
 
 ## 12. Historial
 
+- **v1, 2026-10-13** (el formato en el cable no cambia): el dispatcher pasa del comando
+  `mqtt_dispatch` del servidor al plugin vinculado a la placa. Al detener el plugin se
+  manda un `HOLD`.
 - **v1, 2026-09-22** (el formato en el cable no cambia): el dispatcher del servidor pasa de
   pendiente a implementado en §11, a la espera de la prueba contra la placa.
 - **v1**: formato inicial.

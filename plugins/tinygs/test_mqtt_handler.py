@@ -87,13 +87,13 @@ class TinyGSMQTTClientTests(unittest.TestCase):
         self.api.send_data.assert_not_called()
         self.tracker.on_tracking.assert_not_called()
 
-    def test_a_pass_is_published_with_qos_1(self):
+    def test_a_board_message_goes_with_qos_1_and_is_never_retained(self):
         self.handler.client = MagicMock()
 
-        self.handler.publish_coordinates('plugin/3f2a-uuid/coordinates/raw', '{"type": "ENU"}')
+        self.handler.publish_to_board('device/a1b2c3d4e5f6/coordinates/polar', b'\x50\x01')
 
         self.handler.client.publish.assert_called_once_with(
-            'plugin/3f2a-uuid/coordinates/raw', '{"type": "ENU"}', qos=1,
+            'device/a1b2c3d4e5f6/coordinates/polar', b'\x50\x01', qos=1, retain=False,
         )
 
 

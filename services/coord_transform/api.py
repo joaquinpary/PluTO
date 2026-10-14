@@ -1,9 +1,8 @@
 """POST /transform: the transformation engine over HTTP (docs/contracts/transform-api.md).
 
 A plugin sends the raw trajectory and gets the az/el one back in the same
-response, instead of publishing it on the broker and waiting for it to come
-back on another topic. It is a calculation with no side effects, reachable only
-inside pluto-network, so it takes no credentials.
+response. It is a calculation with no side effects, reachable only inside
+pluto-network, so it takes no credentials.
 """
 from fastapi import FastAPI
 

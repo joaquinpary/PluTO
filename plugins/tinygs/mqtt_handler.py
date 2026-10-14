@@ -111,9 +111,15 @@ class TinyGSMQTTClient:
 
         self.tracker.on_tracking(document)
 
-    def publish_coordinates(self, topic, payload):
-        """Publish a pass. Called from the tracker's thread; paho's publish is safe there."""
-        # QoS 1, like file_tracker: a lost pass shows up as an antenna that never
-        # moves, the most expensive symptom there is to diagnose.
-        result = self.client.publish(topic, payload, qos=1)
-        logger.info("Pass queued for %s (%s bytes, mid=%s)", topic, len(payload), result.mid)
+    def publish_to_board(self, topic, payload):
+        """Put one pointing batch or HOLD on the board's topic (coordinates-dto.md §2).
+
+        Called from the dispatcher's timer thread; paho's publish is safe there.
+        QoS 1, and never retained: a retained setpoint would be handed to the
+        board on every reconnect, aiming it at an instant that has passed.
+        """
+        self.client.publish(topic, payload, qos=1, retain=False)
+
+    def stop(self):
+        """Leave the broker, which ends loop_forever and with it start()."""
+        self.client.disconnect()

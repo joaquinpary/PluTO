@@ -1,15 +1,22 @@
 """What every PluTO plugin needs to talk to the server, copied into each plugin image.
 
-The orchestrator launches a plugin with PLUTO_API_URL and PLUTO_API_TOKEN, and
-with ROTOR_DEVICE_ID when a board is bound to the instance. from_environment()
-turns those into a started ApiClient and, if there is a board, its BoardBridge.
+The orchestrator launches a plugin with PLUTO_API_URL, PLUTO_API_TOKEN and
+PLUTO_TRANSFORM_URL, and with ROTOR_DEVICE_ID when a board is bound to the
+instance. from_environment() turns those into a started ApiClient and, if there
+is a board, its BoardBridge; antenna_from_environment() builds what points it.
 """
 import os
 
+from .antenna import Antenna
 from .api_client import ApiClient
 from .board_bridge import BoardBridge
+from .dispatcher import Dispatcher
+from .transform_client import TransformClient
 
-__all__ = ['ApiClient', 'BoardBridge', 'ConfigurationError', 'from_environment']
+__all__ = [
+    'Antenna', 'ApiClient', 'BoardBridge', 'ConfigurationError',
+    'antenna_from_environment', 'from_environment',
+]
 
 
 class ConfigurationError(Exception):
@@ -37,3 +44,25 @@ def from_environment(environ=None):
 
     api.start()
     return api, bridge
+
+
+def antenna_from_environment(api, publish, environ=None):
+    """A started Antenna for the bound board, or None when the instance has none.
+
+    publish(topic, payload) is the plugin's own MQTT publish: the batches go to
+    the board over the connection the plugin already has.
+    """
+    environ = os.environ if environ is None else environ
+    if not environ.get('ROTOR_DEVICE_ID', '').strip():
+        return None
+
+    transform_url = environ.get('PLUTO_TRANSFORM_URL', '').strip()
+    if not transform_url:
+        raise ConfigurationError(
+            'PLUTO_TRANSFORM_URL is required to point a board; the orchestrator sets it '
+            'when it launches the plugin.'
+        )
+
+    antenna = Antenna(api, TransformClient(transform_url), Dispatcher(publish, api.send_dispatch_order))
+    antenna.start()
+    return antenna
