@@ -7,10 +7,13 @@ which of its keys reach a row.
 from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .device_state import DEVICE_ID_RE
 from .models import DispatchOrder, PluginInstance, Rotor
+from .plugin_handlers import PLUGIN_HANDLERS, get_handler
+from .plugin_handlers.fields import apply_defaults, config_errors
 
 
 class EnvelopeSerializer(serializers.Serializer):
@@ -171,3 +174,101 @@ class PasswordChangeSerializer(serializers.Serializer):
         if errors:
             raise serializers.ValidationError(errors)
         return value
+
+
+# --- Plugin instances --------------------------------------------------------
+
+class ConfigFieldSerializer(serializers.Serializer):
+    """One entry of a handler's config_fields: what the front end builds the form from."""
+    name = serializers.CharField(help_text='The key in config.')
+    label = serializers.CharField()
+    help = serializers.CharField(default='')
+    type = serializers.ChoiceField(choices=['string', 'integer', 'number', 'boolean', 'choice'])
+    required = serializers.BooleanField(default=False)
+    default = serializers.JSONField(allow_null=True)
+    min = serializers.FloatField(allow_null=True, help_text='integer and number only.')
+    max = serializers.FloatField(allow_null=True, help_text='integer and number only.')
+    choices = serializers.ListField(child=serializers.ListField(), allow_null=True,
+                                    help_text='[value, label] pairs; choice only.')
+    pattern = serializers.CharField(allow_null=True, help_text='A regular expression the whole value matches; string only.')
+
+
+class PluginTypeSerializer(serializers.Serializer):
+    type = serializers.CharField(help_text='What plugin_type is set to when creating an instance.')
+    label = serializers.CharField()
+    message_types = serializers.ListField(child=serializers.CharField(),
+                                          help_text='What it sends to /api/plugin-data/<type>.')
+    config_fields = ConfigFieldSerializer(many=True)
+
+
+def clean_config(plugin_type, config):
+    """config with the defaults of its type filled in, or ValidationError({'config': {field: [...]}}).
+
+    The same check launch makes (fields.config_errors), on the config as it
+    came: the rules of each field first, then the handler's validate() for the
+    rules that cross fields. The defaults go in only once it passed, so saving
+    and launching never disagree about the same config.
+    """
+    handler = get_handler(plugin_type)
+    if handler is None:
+        raise serializers.ValidationError({'plugin_type': [f'Unknown plugin type {plugin_type!r}.']})
+    errors = config_errors(handler, config)
+    if errors:
+        raise serializers.ValidationError({'config': errors})
+    return apply_defaults(handler.config_fields, config)
+
+
+def config_warnings(plugin):
+    """What saves fine but will not do what the user expects."""
+    warnings = []
+    plugin_min = (plugin.config or {}).get('min_elevation_deg')
+    rotor = plugin.rotor
+    is_number = isinstance(plugin_min, (int, float)) and not isinstance(plugin_min, bool)
+    if rotor is not None and is_number and plugin_min < rotor.min_elevation_deg:
+        # The antenna cuts a trajectory at its first point below the board's
+        # limit, so a pass that starts lower is dropped whole.
+        warnings.append(
+            f'min_elevation_deg ({plugin_min:g}) is below the minimum of the board ({rotor.min_elevation_deg:g}): '
+            'every pass that starts below the board minimum is dropped.'
+        )
+    return warnings
+
+
+class PluginSerializer(serializers.ModelSerializer):
+    plugin_type = serializers.ChoiceField(choices=sorted(PLUGIN_HANDLERS), help_text='Fixed once created: ignored on PATCH.')
+    # allow_null only tells the schema the truth: an unbound instance answers null.
+    board = serializers.SlugRelatedField(source='rotor', slug_field='device_id', read_only=True, allow_null=True,
+                                         help_text='Set with PUT /api/plugins/<uuid>/board.')
+    docker_status = serializers.SerializerMethodField(
+        help_text="Docker's state of the container; not_found without one, unknown if Docker did not answer.",
+    )
+    warnings = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PluginInstance
+        fields = [
+            'plugin_uuid', 'name', 'plugin_type', 'config', 'status', 'docker_status', 'board',
+            'created_at', 'updated_at', 'warnings',
+        ]
+        read_only_fields = ['status']
+
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.instance is not None:
+            # Changing the type of an instance whose container runs would orphan
+            # that container, so the type is decided once, at creation.
+            fields['plugin_type'].read_only = True
+        return fields
+
+    def validate(self, attrs):
+        if self.instance is None or 'config' in attrs:
+            plugin_type = attrs['plugin_type'] if self.instance is None else self.instance.plugin_type
+            attrs['config'] = clean_config(plugin_type, attrs.get('config', {}))
+        return attrs
+
+    def get_docker_status(self, plugin) -> str:
+        return self.context.get('docker_statuses', {}).get(plugin.plugin_uuid, 'unknown')
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_warnings(self, plugin):
+        return config_warnings(plugin)

@@ -2,7 +2,7 @@ from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
-from . import api, api_account
+from . import api, api_account, api_plugins
 
 urlpatterns = [
     # Plugin containers, with Plugin <token>.
@@ -22,6 +22,9 @@ urlpatterns = [
     # The front end, with Bearer <jwt>.
     path('boards', api.BoardsView.as_view(), name='api-boards'),
     path('boards/scan', api.BoardScanView.as_view(), name='api-boards-scan'),
+    path('plugin-types', api_plugins.PluginTypesView.as_view(), name='api-plugin-types'),
+    path('plugins', api_plugins.PluginsView.as_view(), name='api-plugins'),
+    path('plugins/<uuid:plugin_uuid>', api_plugins.PluginDetailView.as_view(), name='api-plugin'),
     path('plugins/<uuid:plugin_uuid>/board', api.PluginBoardView.as_view(), name='api-plugin-board'),
     # The OpenAPI schema and its Swagger UI.
     path('schema', SpectacularAPIView.as_view(), name='api-schema'),
