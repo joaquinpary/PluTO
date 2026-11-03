@@ -1,4 +1,4 @@
-import type { Board, BoardLive, LiveState, Plugin, PluginType } from '../api/types';
+import type { Board, BoardLive, LiveState, Plugin, PluginType } from '../shared/api/types';
 
 // API rows for tests, with defaults that pass for a healthy station. If tsc
 // complains here, the schema changed: follow it.

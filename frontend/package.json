@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "gen:api": "openapi-typescript http://localhost:8000/api/schema -o src/api/schema.d.ts",
+    "gen:api": "openapi-typescript http://localhost:8000/api/schema -o src/shared/api/schema.d.ts",
     "e2e": "playwright test"
   },
   "dependencies": {

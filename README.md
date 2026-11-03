@@ -21,7 +21,7 @@ docker compose up -d --build
 | Carpeta | Qué hay |
 |---|---|
 | `backend/` | Django: `pluto/` (settings y URLs), `server_core/` (modelos, `api/` con un módulo por recurso, `tests/`) y `manage.py`. Los comandos de Django se corren desde acá |
-| `frontend/` | El front en React + TypeScript, con su `Dockerfile` y `nginx.conf` |
+| `frontend/` | El front en React + TypeScript. `src/features/` tiene una carpeta por funcionalidad (página, componentes, lógica, hooks de la API y sus tests) y `src/shared/` lo común: el cliente de la API, la sesión, el layout y los formatos |
 | `plugins/` | Los plugins (`file_tracker`, `tinygs`) y su SDK. El server construye sus imágenes desde acá |
 | `services/` | `coord_transform` |
 | `mosquitto/` | La configuración del broker |

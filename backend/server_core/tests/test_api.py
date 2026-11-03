@@ -629,7 +629,7 @@ class SchemaTests(TestCase):
         return self.client.get('/api/schema', {'format': 'json'}).json()['components']['schemas']
 
     def test_request_bodies_leave_out_the_read_only_fields(self):
-        # frontend/src/api/schema.d.ts is generated from this schema. With one
+        # frontend/src/shared/api/schema.d.ts is generated from this schema. With one
         # component for both directions, logging in would have to send the
         # access and refresh tokens it is asking for.
         login = self.schema_components()['TokenObtainPairRequest']

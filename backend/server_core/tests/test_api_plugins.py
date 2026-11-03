@@ -121,7 +121,7 @@ class PluginListTests(PluginApiTestCase):
 
 class PluginSchemaTests(PluginApiTestCase):
     def test_an_unbound_instance_is_null_in_the_schema(self):
-        # frontend/src/api/schema.d.ts is generated from this schema: without
+        # frontend/src/shared/api/schema.d.ts is generated from this schema: without
         # nullable, a Plugin's board would be typed as a string that never is null.
         schema = self.client.get('/api/schema', {'format': 'json'}).json()
         board = schema['components']['schemas']['Plugin']['properties']['board']

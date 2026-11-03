@@ -70,7 +70,7 @@ jobs:
       - run: npm test -- --run
       - run: npm run build
 
-  # typecheck only catches an API change if src/api/schema.d.ts was regenerated:
+  # typecheck only catches an API change if src/shared/api/schema.d.ts was regenerated:
   # this job fails when the committed file is not what gen:api makes from this
   # commit's API.
   api-types:
@@ -91,6 +91,6 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: npx openapi-typescript schema.yml -o src/api/schema.d.ts
-      - name: src/api/schema.d.ts is up to date (run npm run gen:api and commit it)
-        run: git diff --exit-code -- src/api/schema.d.ts
+      - run: npx openapi-typescript schema.yml -o src/shared/api/schema.d.ts
+      - name: src/shared/api/schema.d.ts is up to date (run npm run gen:api and commit it)
+        run: git diff --exit-code -- src/shared/api/schema.d.ts
