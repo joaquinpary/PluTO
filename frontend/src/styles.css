@@ -1,0 +1,19 @@
+.app-main {
+  background: var(--mantine-color-gray-0);
+}
+[data-mantine-color-scheme='dark'] .app-main {
+  background: var(--mantine-color-dark-8);
+}
+
+/* A night sky behind the login and the first setup. */
+.auth-bg {
+  background:
+    radial-gradient(1px 1px at 12% 22%, #ffffffb0, transparent),
+    radial-gradient(1px 1px at 28% 68%, #ffffff90, transparent),
+    radial-gradient(1.5px 1.5px at 46% 14%, #ffffffc0, transparent),
+    radial-gradient(1px 1px at 63% 82%, #ffffff90, transparent),
+    radial-gradient(1.5px 1.5px at 78% 32%, #ffffffb0, transparent),
+    radial-gradient(1px 1px at 90% 74%, #ffffff80, transparent),
+    radial-gradient(1px 1px at 8% 88%, #ffffff80, transparent),
+    radial-gradient(ellipse at top, #3b4fc4 0%, #171a3d 55%, #0a0b18 100%);
+}

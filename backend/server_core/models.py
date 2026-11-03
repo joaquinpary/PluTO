@@ -1,0 +1,273 @@
+import uuid
+
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
+from django.db import models
+from django.db.models.functions import Now
+
+class PluginInstance(models.Model):
+    class Status(models.TextChoices):
+        STOPPED = 'STOPPED', 'Stopped'
+        RUNNING = 'RUNNING', 'Running'
+        ERROR   = 'ERROR',   'Error'
+
+    name        = models.CharField(max_length=100, unique=True)
+    plugin_type = models.CharField(max_length=50)
+    plugin_uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    status      = models.CharField(max_length=20, choices=Status.choices, default=Status.STOPPED)
+    container_id = models.CharField(max_length=128, blank=True)
+
+    # sha256 of the token the running container uses against /api/. Only the hash
+    # is stored, so reading the database is not enough to impersonate a plugin.
+    # Set on launch and cleared on stop, which is what revokes the token.
+    api_token_hash = models.CharField(max_length=64, blank=True, editable=False, db_index=True)
+
+    # The rotor this instance drives while it runs. Empty is normal: a plugin can
+    # be configured before any board has registered, and one that only produces
+    # data never drives anything. SET_NULL because unassigning a rotor is routine
+    # and no reason to lose the plugin's own configuration.
+    rotor = models.ForeignKey(
+        'Rotor',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='plugin_instances',
+        help_text='The rotor this instance drives while RUNNING. Only one running instance per rotor (RF-31.1).',
+    )
+
+    # Plugin-specific parameters — arbitrary key/value pairs forwarded to the orchestrator
+    config = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Plugin-specific parameters as JSON (e.g. {"coord_type": "ECEF", "coord_format": "GEO"}).',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def clean(self):
+        super().clean()
+        if self.rotor_id and self.status == self.Status.RUNNING:
+            # RF-31.1: one plugin has exclusive control of the motors, and
+            # assigning the rotor is how the user picks it. Excluding self.pk is
+            # a no-op while the instance is unsaved (pk is None and no stored row
+            # has a null pk), so the same check covers the add form too.
+            already_driven = PluginInstance.objects.filter(
+                rotor_id=self.rotor_id, status=self.Status.RUNNING,
+            ).exclude(pk=self.pk).exists()
+            if already_driven:
+                raise ValidationError({
+                    'rotor': f'{self.rotor} is already driven by another running plugin instance.',
+                })
+
+    def __str__(self):
+        return self.name
+
+class PluginData(models.Model):
+    """One row per envelope a plugin sent to POST /api/plugin-data/<type>."""
+    # PROTECT: a plugin that already produced data is stopped, not deleted,
+    # so its history keeps pointing at a real instance.
+    plugin = models.ForeignKey(PluginInstance, on_delete=models.PROTECT, related_name='data')
+    device = models.TextField(blank=True)
+    message_type = models.CharField(max_length=32)
+
+    # How the plugin normalized the payload before publishing it
+    payload_format = models.TextField(default='json')
+    schema_version = models.PositiveSmallIntegerField(default=1)
+    payload = models.JSONField(default=dict)
+
+    # Tracing: message_id correlates the plugin log line with this row and lets
+    # the API answer a retried request as a duplicate; received_at is when the plugin saw
+    # the message and created_at when it was persisted.
+    message_id = models.TextField(unique=True, null=True, blank=True)
+    source_topic = models.TextField(blank=True)
+    ingest_topic = models.TextField(blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(db_default=Now())
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['plugin', 'message_type', '-created_at']),
+            models.Index(fields=['device', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.plugin_id}/{self.message_type}#{self.pk}'
+
+class Rotor(models.Model):
+    """An ESP32 driving a pan-tilt, known by the device_id of its MQTT topics.
+
+    The row is created the first time the server hears of the board, from a
+    scan of the retained device/<device_id>/status messages (POST
+    /api/boards/scan), so a new board shows up without being registered by
+    hand. Its reports then arrive through the plugin it is bound to
+    (POST /api/device/status|state, docs/contracts/device-state.md).
+    """
+    device_id = models.CharField(
+        max_length=12,
+        unique=True,
+        validators=[RegexValidator(r'^[0-9a-f]{12}$', 'Twelve lowercase hex digits: the MAC of the station interface.')],
+    )
+    name = models.CharField(max_length=100, blank=True)
+    online = models.BooleanField(default=False)
+    status_changed_at = models.DateTimeField(null=True, blank=True)
+    last_state_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Operational pointing limits (RF-30.1). The board keeps its own servo limits
+    # as the last line of defence (RF-07.2); these say where the antenna is
+    # allowed to look — an obstruction, or a horizon below which tracking is
+    # pointless — and the dispatcher cuts a trajectory that leaves them.
+    min_elevation_deg = models.FloatField(
+        default=10.0,
+        validators=[MinValueValidator(-90.0), MaxValueValidator(90.0)],
+        help_text='Below this elevation the dispatcher cuts the trajectory and sends HOLD (RF-30.2).',
+    )
+    min_azimuth_deg = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0.0), MaxValueValidator(360.0)],
+        help_text='Start of the allowed azimuth window. Leave both azimuth fields empty for no restriction.',
+    )
+    max_azimuth_deg = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0.0), MaxValueValidator(360.0)],
+        help_text='End of the allowed azimuth window. A value below the start wraps through north, e.g. 300 to 60.',
+    )
+    # Where the antenna stands, which a plugin that computes passes needs
+    # (STATION_COORDINATES). On the board and not on the instance: it belongs
+    # to the place, and every instance bound to the board shares it. Optional,
+    # because a board registers itself long before anybody measures it.
+    latitude_deg = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(-90.0), MaxValueValidator(90.0)],
+    )
+    longitude_deg = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(-180.0), MaxValueValidator(180.0)],
+    )
+    altitude_m = models.FloatField(
+        null=True,
+        blank=True,
+        help_text='Metres above sea level. Empty counts as 0.',
+    )
+
+    class Meta:
+        ordering = ['device_id']
+
+    def clean(self):
+        super().clean()
+        # Half a window says nothing: is 200 a floor or a ceiling?
+        if (self.min_azimuth_deg is None) != (self.max_azimuth_deg is None):
+            raise ValidationError('Set both azimuth limits, or leave both empty for no azimuth restriction.')
+        # Half a location is no place at all, and would silently mean none.
+        if (self.latitude_deg is None) != (self.longitude_deg is None):
+            raise ValidationError('Set both latitude and longitude, or leave both empty.')
+
+    def __str__(self):
+        return self.name or self.device_id
+
+    @property
+    def location(self):
+        """The station the plugins compute passes for, or None without latitude and longitude."""
+        if self.latitude_deg is None or self.longitude_deg is None:
+            return None
+        return {'lat': self.latitude_deg, 'lon': self.longitude_deg, 'alt': self.altitude_m or 0.0}
+
+    # The limits are applied by the plugin driving the board, which gets them
+    # from GET /api/plugin/rotor (pluto_sdk.pointing.RotorLimits).
+
+class RotorState(models.Model):
+    """One state document from device/<device_id>/state (device-state.md §3)."""
+    rotor = models.ForeignKey(Rotor, on_delete=models.PROTECT, related_name='states')
+    received_at = models.DateTimeField(db_default=Now())
+
+    # The board's own time, kept only when its clock was synced.
+    board_time = models.DateTimeField(null=True, blank=True)
+    clock_synced = models.BooleanField(default=False)
+    mode = models.CharField(max_length=16, blank=True)
+
+    # Commanded position in geographic centidegrees; the servos report nothing back.
+    az_cdeg = models.IntegerField(null=True, blank=True)
+    el_cdeg = models.IntegerField(null=True, blank=True)
+    pan_mode = models.CharField(max_length=16, blank=True)
+
+    # The last batch the board received, as the board reported it.
+    batch_accepted = models.BooleanField(null=True, blank=True)
+    batch_error = models.CharField(max_length=32, blank=True)
+    latency_ms = models.BigIntegerField(null=True, blank=True)
+    rejected_total = models.PositiveBigIntegerField(default=0)
+
+    # The whole document, so fields added to the contract later are not lost.
+    payload = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ['-received_at']
+        indexes = [
+            models.Index(fields=['rotor', '-received_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.rotor_id} {self.mode} #{self.pk}'
+
+class DispatchOrder(models.Model):
+    """One row per message a plugin published on device/<device_id>/coordinates/polar.
+
+    The plugin reports each one through POST /api/dispatch-orders.
+
+    Consecutive batches overlap on purpose (coordinates-dto.md §10), so a given
+    setpoint shows up in up to three rows. That duplication is the point: this is
+    the log of what went on the wire, and the board answers per message —
+    RotorState.batch_accepted, batch_error and latency_ms are keyed by t_sent_ms,
+    which only a per-message row can be joined against.
+    """
+    class Kind(models.TextChoices):
+        BATCH = 'BATCH', 'Batch'
+        HOLD  = 'HOLD',  'Hold'
+
+    class Reason(models.TextChoices):
+        END     = 'end',     'Trajectory ended'
+        LIMITS  = 'limits',  'Left the rotor limits'
+        EXPIRED = 'expired', 'Every point had already expired'
+        # The plugin driving the rotor was stopped: it holds the antenna on its way out.
+        STOPPED = 'stopped', 'The plugin was stopped'
+
+    # PROTECT on both: a plugin or a rotor with history is stopped, not deleted,
+    # so the pointing record keeps pointing at rows that exist.
+    rotor = models.ForeignKey(Rotor, on_delete=models.PROTECT, related_name='orders')
+    plugin = models.ForeignKey(PluginInstance, on_delete=models.PROTECT, related_name='orders')
+    kind = models.CharField(max_length=8, choices=Kind.choices)
+
+    # The header of the binary DTO as published (coordinates-dto.md §3.1).
+    t0_ms = models.BigIntegerField()
+    t_sent_ms = models.BigIntegerField()
+
+    # t0_ms plus the last dt_ms: the instant this message covers. Materialized so
+    # that "which order was in effect at T" is a range query rather than a walk
+    # through the JSON.
+    t_end_ms = models.BigIntegerField()
+
+    # [[dt_ms, az_cdeg, el_cdeg], ...] exactly as encoded, empty for a HOLD. The
+    # absolute instant of a setpoint is t0_ms + dt_ms.
+    points = models.JSONField(default=list)
+
+    # Why the antenna was told to stop. Empty on a BATCH.
+    reason = models.CharField(max_length=16, choices=Reason.choices, blank=True)
+
+    created_at = models.DateTimeField(db_default=Now())
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['rotor', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.rotor_id} {self.kind}#{self.pk}'

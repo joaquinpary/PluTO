@@ -1,0 +1,45 @@
+{
+  "name": "pluto-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "gen:api": "openapi-typescript http://localhost:8000/api/schema -o src/shared/api/schema.d.ts",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@mantine/charts": "7.17.8",
+    "@mantine/core": "7.17.8",
+    "@mantine/dates": "7.17.8",
+    "@mantine/hooks": "7.17.8",
+    "@mantine/notifications": "7.17.8",
+    "@tanstack/react-query": "5.90.2",
+    "dayjs": "1.11.13",
+    "openapi-fetch": "0.17.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.30.6",
+    "recharts": "2.15.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@testing-library/dom": "10.4.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.0",
+    "@testing-library/user-event": "14.6.1",
+    "@types/react": "18.3.23",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "jsdom": "25.0.1",
+    "msw": "2.11.3",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "vite": "5.4.21",
+    "vitest": "2.1.9"
+  }
+}

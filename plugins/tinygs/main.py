@@ -17,12 +17,14 @@ logger = logging.getLogger("tinygs_main")
 
 
 def build_station_from_env():
-    """The ground station the orchestrator injected, as a {lat, lon, alt} dict.
+    """The ground station the orchestrator injected, as a {lat, lon, alt} dict, or None.
 
-    Same precedence as file_tracker: STATION_COORDINATES first, the three loose
-    variables as a fallback. The station_location the board sends in every
-    tracking message is ignored on purpose — the one configured in PluTO is the
-    authority, and it carries the altitude the board does not.
+    STATION_COORDINATES first, the loose STATION_LAT/LON/ALT as a fallback.
+    None when there is neither: PluTO sends no location for an instance whose
+    board has none, and the plugin then relays packets without computing
+    passes. The station_location the board sends in every tracking message is
+    ignored on purpose — the one configured in PluTO is the authority, and it
+    carries the altitude the board does not.
     """
     station_coordinates = os.environ.get("STATION_COORDINATES", "")
     if station_coordinates:
@@ -39,10 +41,12 @@ def build_station_from_env():
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             logger.warning("Invalid STATION_COORDINATES value, falling back to STATION_LAT/LON/ALT")
 
+    if not os.environ.get("STATION_LAT") or not os.environ.get("STATION_LON"):
+        return None
     return {
-        "lat": float(os.environ.get("STATION_LAT", 0.0)),
-        "lon": float(os.environ.get("STATION_LON", 0.0)),
-        "alt": float(os.environ.get("STATION_ALT", 0.0)),
+        "lat": float(os.environ["STATION_LAT"]),
+        "lon": float(os.environ["STATION_LON"]),
+        "alt": float(os.environ.get("STATION_ALT") or 0.0),
     }
 
 
@@ -110,9 +114,13 @@ def main():
             # Following the satellite only serves to point a board: without one
             # the plugin relays the station's data and nothing else.
             logger.info("No board bound to this instance: relaying the station's data only")
+        elif (station := build_station_from_env()) is None:
+            # The packets are worth relaying anyway; only a pass needs to know
+            # where the antenna stands.
+            logger.warning("No station location: relaying the station's data without computing passes")
         else:
             tracker = Tracker(
-                station=build_station_from_env(),
+                station=station,
                 cache=TleCache(ttl_seconds=tle_ttl_hours * 3600),
                 submit=antenna.submit,
                 min_elevation_deg=min_elevation_deg,

@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # skyfield pulls numpy and sgp4. They ship wheels for this image today, but a
-# plugin image is built lazily on its first launch from the admin, which is a
+# plugin image is built lazily on its first launch from the front end, which is a
 # bad moment to discover one needs compiling. Same precaution as coord_transform.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential gcc \

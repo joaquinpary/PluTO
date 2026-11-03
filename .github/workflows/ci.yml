@@ -1,0 +1,96 @@
+# Every PR, and every push to develop and main: the Django tests on Postgres,
+# the OpenAPI schema, and the front end's types, tests and build. The
+# end-to-end test (frontend/e2e) needs the whole stack and runs by hand.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        # The same major version docker-compose.yml runs.
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: pluto
+          POSTGRES_USER: pluto
+          POSTGRES_PASSWORD: pluto
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pluto -d pluto"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      # What settings.py reads (.env.example). Nothing here is a secret.
+      SECRET_KEY: ci-only-not-a-secret-0123456789abcdefghijklmnopqrstuvwxyz
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: pluto
+      POSTGRES_USER: pluto
+      POSTGRES_PASSWORD: pluto
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python manage.py test server_core
+      - name: Validate the OpenAPI schema
+        run: python manage.py spectacular --validate --fail-on-warn --file schema.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi-schema
+          path: backend/schema.yml
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test -- --run
+      - run: npm run build
+
+  # typecheck only catches an API change if src/shared/api/schema.d.ts was regenerated:
+  # this job fails when the committed file is not what gen:api makes from this
+  # commit's API.
+  api-types:
+    needs: backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: openapi-schema
+          path: frontend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx openapi-typescript schema.yml -o src/shared/api/schema.d.ts
+      - name: src/shared/api/schema.d.ts is up to date (run npm run gen:api and commit it)
+        run: git diff --exit-code -- src/shared/api/schema.d.ts
