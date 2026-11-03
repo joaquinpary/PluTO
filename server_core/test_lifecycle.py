@@ -73,9 +73,22 @@ class LaunchTests(TestCase):
             launch(self.plugin)
 
         self.assertEqual(raised.exception.code, 'invalid_config')
+        self.assertEqual(raised.exception.fields, {'tinygs_device': ['This field is required.']})
         orchestrator_cls.return_value.spawn_plugin.assert_not_called()
         self.plugin.refresh_from_db()
         self.assertEqual(self.plugin.status, STOPPED)
+
+    def test_a_config_broken_across_fields_never_reaches_docker(self, orchestrator_cls):
+        plugin = PluginInstance.objects.create(
+            name='tracker', plugin_type='file_tracker', config={'coord_type': 'ENU', 'coord_format': 'GEO'},
+        )
+
+        with self.assertRaises(LifecycleError) as raised:
+            launch(plugin)
+
+        self.assertEqual(raised.exception.code, 'invalid_config')
+        self.assertEqual(list(raised.exception.fields), ['non_field_errors'])
+        orchestrator_cls.return_value.spawn_plugin.assert_not_called()
 
     def test_a_running_instance_is_not_launched_again(self, orchestrator_cls):
         self.plugin.status = RUNNING

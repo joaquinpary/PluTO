@@ -11,7 +11,8 @@ from .api_tokens import issue_token
 from .models import PluginInstance
 from .mqtt_publish import publish_retained
 from .orchestrator import PluginOrchestrator
-from .plugin_handlers import PLUGIN_HANDLERS
+from .plugin_handlers import get_handler
+from .plugin_handlers.fields import config_errors
 from .plugin_handlers.file_tracker import MAX_FILE_BYTES, build_file_message, input_topic
 
 logger = logging.getLogger(__name__)
@@ -47,12 +48,13 @@ def launch(instance):
     if instance.status == RUNNING:
         raise LifecycleError('already_running', f'{instance.name} is already running.')
 
-    handler = PLUGIN_HANDLERS.get(instance.plugin_type)
+    handler = get_handler(instance.plugin_type)
     if handler is None:
         raise LifecycleError('invalid_config', f'Unknown plugin type {instance.plugin_type!r}.')
-    error = handler.validate(instance.config or {})
-    if error:
-        raise LifecycleError('invalid_config', error)
+    # Checked on save too; this catches a configuration stored before that.
+    errors = config_errors(handler, instance.config)
+    if errors:
+        raise LifecycleError('invalid_config', 'The configuration is not valid. Fix it and save it before launching.', fields=errors)
 
     if instance.rotor_id:
         # RF-31.1: one running instance drives a board at a time.
