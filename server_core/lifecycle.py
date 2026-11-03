@@ -9,8 +9,10 @@ import logging
 
 from .api_tokens import issue_token
 from .models import PluginInstance
+from .mqtt_publish import publish_retained
 from .orchestrator import PluginOrchestrator
 from .plugin_handlers import PLUGIN_HANDLERS
+from .plugin_handlers.file_tracker import MAX_FILE_BYTES, build_file_message, input_topic
 
 logger = logging.getLogger(__name__)
 
@@ -122,3 +124,60 @@ def sync(instance):
     if (instance.status, instance.container_id, instance.api_token_hash) != (status, container_id, api_token_hash):
         _save_runtime(instance, status, container_id, api_token_hash)
     return instance
+
+
+def delete(instance):
+    """Stop the instance unless it is STOPPED, then delete it.
+
+    An instance that produced data or drove a board is kept, as the database
+    already demands (PROTECT): its history must keep pointing at it. That is
+    checked before stopping, so a refused delete leaves the instance as it was.
+    """
+    instance.refresh_from_db()
+    if instance.data.exists() or instance.orders.exists():
+        raise LifecycleError(
+            'protected', f'{instance.name} has stored data or dispatch orders. Stop it instead of deleting it.',
+        )
+    if instance.status != STOPPED:
+        stop(instance)
+
+    plugin_type, plugin_uuid = instance.plugin_type, instance.plugin_uuid
+    instance.delete()
+    if plugin_type == 'file_tracker':
+        _clear_coordinates_file(plugin_uuid)
+
+
+def _clear_coordinates_file(plugin_uuid):
+    # Otherwise the file outlives the instance, retained on a topic nobody
+    # will ever read again.
+    try:
+        publish_retained(input_topic(plugin_uuid), b'')
+    except Exception as exc:
+        logger.warning('Could not clear the coordinates file of %s: %s', plugin_uuid, exc)
+
+
+def send_coordinates_file(instance, uploaded_file):
+    """Hand a coordinates file to a file_tracker, running or not.
+
+    The message is retained: a running plugin gets it right away, a stopped
+    one when it is launched. A new file replaces the previous one.
+    """
+    if instance.plugin_type != 'file_tracker':
+        raise LifecycleError('not_file_tracker', 'Only file_tracker instances take a coordinates file.')
+    config = instance.config or {}
+    missing = [key for key in ('coord_type', 'coord_format') if not config.get(key)]
+    if missing:
+        raise LifecycleError('invalid_config', f'Set {" and ".join(missing)} in the configuration first.')
+
+    # One byte past the limit is enough to know the file is too big.
+    content = uploaded_file.read(MAX_FILE_BYTES + 1)
+    try:
+        message = build_file_message(config, uploaded_file.name, content)
+    except ValueError as exc:
+        raise LifecycleError('bad_file', str(exc)) from None
+
+    try:
+        publish_retained(input_topic(instance.plugin_uuid), message)
+    except Exception as exc:
+        logger.warning('Could not send the coordinates file of %s: %s', instance.name, exc)
+        raise LifecycleError('broker', f'Could not reach the broker: {exc}') from None
