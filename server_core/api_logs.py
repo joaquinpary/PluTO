@@ -1,4 +1,4 @@
-"""GET /api/logs/<service>: the last lines of PluTO's own containers (spec §4.5)."""
+"""GET /api/logs/<service>: the last lines of PluTO's own containers."""
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response

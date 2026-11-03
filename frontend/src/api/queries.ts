@@ -5,7 +5,7 @@ import type { Plugin, PluginFilters } from './types';
 import type { BoardSettings } from '../lib/boardForm';
 import { hasRange, type RangeQuery } from '../lib/history';
 
-/** GET /api/setup: whether the only user still has to be created (spec 3.4). */
+/** GET /api/setup: whether the only user still has to be created. */
 export function useSetupStatus() {
   return useQuery({
     queryKey: ['setup'],
@@ -14,13 +14,13 @@ export function useSetupStatus() {
   });
 }
 
-// Polling periods (spec 6). None of them runs while the tab is hidden.
+// Polling periods. None of them runs while the tab is hidden.
 export const LIVE_INTERVAL_MS = 1000;
 export const PLUGINS_INTERVAL_MS = 5000;
 export const TRACK_INTERVAL_MS = 5000;
 
 /**
- * How every polled query rides out a failure (spec 6): two retries a second
+ * How every polled query rides out a failure: two retries a second
  * apart before it turns to error, with data keeping the last good answer
  * meanwhile. A 404 is an answer (no such instance, no container), not a
  * failure, so it is not retried.
@@ -70,13 +70,13 @@ export function useTracks(deviceIds: string[]) {
   });
 }
 
-// --- Instances, boards and logs (Task 16) ------------------------------------
+// --- Instances, boards and logs ----------------------------------------------
 
 export type PluginAction = 'launch' | 'stop' | 'sync';
 
 export interface PluginInput {
   name: string;
-  /** The enum the schema declares: PluginSerializer.plugin_type is a ChoiceField (Task 6). */
+  /** The enum the schema declares: PluginSerializer.plugin_type is a ChoiceField. */
   plugin_type: Plugin['plugin_type'];
   config: Record<string, unknown>;
 }
@@ -219,7 +219,7 @@ export function useLogs(source: LogSource, tail: number, autoRefresh: boolean) {
   });
 }
 
-// --- Boards (Task 17) ----------------------------------------------------------
+// --- Boards ------------------------------------------------------------------
 
 export function useBoard(deviceId: string) {
   return useQuery({
@@ -237,7 +237,7 @@ export function useUpdateBoard(deviceId: string) {
   });
 }
 
-// --- History and results (Task 18) -------------------------------------------
+// --- History and results -----------------------------------------------------
 
 export interface OrderFilters extends RangeQuery {
   board?: string;
@@ -321,7 +321,7 @@ export function useReception(plugin: string, range: RangeQuery) {
   });
 }
 
-// --- Account (Task 19) -----------------------------------------------------------
+// --- Account -----------------------------------------------------------------
 
 export function useChangePassword() {
   return useMutation({

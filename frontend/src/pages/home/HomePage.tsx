@@ -7,7 +7,7 @@ import { SkyPlot, type SkyAntenna } from '../../components/SkyPlot';
 import { alertsFor } from '../../lib/alerts';
 import { useNow } from '../../lib/useNow';
 
-/** Inicio: the boards live, the sky and the alerts (spec 4.1). */
+/** Inicio: the boards live, the sky and the alerts. */
 export function HomePage() {
   const now = useNow();
   const live = useBoardsLive();

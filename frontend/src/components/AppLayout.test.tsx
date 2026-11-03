@@ -24,7 +24,7 @@ function renderLayout(path: string) {
 }
 
 describe('AppLayout', () => {
-  it('links every screen of the spec from the navigation', () => {
+  it('links every screen from the navigation', () => {
     renderLayout('/');
 
     const expected = [

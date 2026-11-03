@@ -52,7 +52,7 @@ describe('ResultsTab', () => {
     expect(receptionUrls.every((url) => url.searchParams.get('plugin') === PLUGIN.plugin_uuid)).toBe(true);
     expect(await screen.findAllByText(/4 paquetes/)).toHaveLength(2);
 
-    // Exportar CSV (spec 4.4): the first button is the pointing error's, the same query with format=csv.
+    // Exportar CSV: the first button is the pointing error's, the same query with format=csv.
     URL.createObjectURL = vi.fn(() => 'blob:passes');
     URL.revokeObjectURL = vi.fn();
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});

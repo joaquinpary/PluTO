@@ -1,5 +1,5 @@
 /**
- * The session (spec 3.3). The access token lives only in memory; the refresh
+ * The session. The access token lives only in memory; the refresh
  * token goes to localStorage, so reopening the page does not ask for the
  * password again.
  */
@@ -50,7 +50,7 @@ export function subscribe(listener: () => void): () => void {
  * Trades the refresh token for a new pair; true if it worked. Every caller
  * shares the request in flight: the refresh token rotates and is blacklisted
  * once used, so a second refresh with the same one would fail and log the
- * user out (Review Focus 1).
+ * user out.
  */
 export function refreshOnce(): Promise<boolean> {
   inFlight ??= refresh().finally(() => {

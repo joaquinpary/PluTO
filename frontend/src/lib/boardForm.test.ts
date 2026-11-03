@@ -19,7 +19,7 @@ const BASE: BoardFormValues = {
   max_azimuth_deg: '',
 };
 
-describe('validateBoard (Review Focus 3)', () => {
+describe('validateBoard', () => {
   it('accepts no azimuth window at all', () => {
     expect(validateBoard(BASE)).toEqual({});
   });

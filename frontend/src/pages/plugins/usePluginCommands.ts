@@ -17,12 +17,12 @@ const FAILED: Record<PluginAction, string> = {
 
 /**
  * Launch answers 409 when the instance already runs or another running
- * instance drives its board (RF-31.1, Task 7), in English. The 409 is said in
+ * instance drives its board (RF-31.1), in English. The 409 is said in
  * Spanish, naming that other instance when the pages already know it.
  *
  * A launch that got no answer from Django (nginx gave up after 600 s, or the
  * connection dropped) may still have worked: the container could be up, and
- * Sync tells. A 502 that does carry a detail is Docker failing (Task 7).
+ * Sync tells. A 502 that does carry a detail is Docker failing.
  */
 export function launchErrorMessage(error: unknown, driver?: string): string {
   if (isStatus(error, 409)) {

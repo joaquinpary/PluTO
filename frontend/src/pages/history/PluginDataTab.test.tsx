@@ -16,7 +16,7 @@ function row(id: number, message_type: string, device: string, payload: Record<s
   };
 }
 
-describe('PluginDataTab (Review Focus 5)', () => {
+describe('PluginDataTab', () => {
   it('leaves the missing fields empty, survives an unknown type and keeps the raw JSON', async () => {
     const urls: URL[] = [];
     server.use(

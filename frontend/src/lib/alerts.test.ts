@@ -39,7 +39,7 @@ describe('alertsFor', () => {
     expect(messages([], [pluginRow({ status: 'ERROR' })])).toEqual(['La instancia tinygs-terraza está en error.']);
   });
 
-  it('names a board without a name by its device_id, and survives one without state (Review Focus 2)', () => {
+  it('names a board without a name by its device_id, and survives one without state', () => {
     const board = liveBoard({ name: '', online: false, state: null, last_state_at: null });
 
     expect(messages([board], [])).toEqual(['aabbccddeeff está offline.']);

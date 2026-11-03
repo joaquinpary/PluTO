@@ -42,7 +42,7 @@ describe('BoardCard', () => {
     expect(screen.getByText('0.46°')).toBeInTheDocument();
   });
 
-  it('shows "Sin datos" for a board that never sent a state (Review Focus 2)', () => {
+  it('shows "Sin datos" for a board that never sent a state', () => {
     const board = liveBoard({ name: '', state: null, last_state_at: null });
 
     renderWithProviders(<BoardCard board={board} now={now} />);

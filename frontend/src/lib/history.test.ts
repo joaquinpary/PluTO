@@ -42,7 +42,7 @@ describe('cursorFrom', () => {
   });
 });
 
-describe('cells (Review Focus 5)', () => {
+describe('cells', () => {
   it('leaves missing values empty instead of printing null', () => {
     expect(cell(null)).toBe('');
     expect(cell(undefined)).toBe('');

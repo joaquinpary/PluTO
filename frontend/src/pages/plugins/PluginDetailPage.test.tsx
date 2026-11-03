@@ -115,7 +115,7 @@ describe('PluginDetailPage', () => {
     expect(screen.queryByRole('tab', { name: 'Archivo de coordenadas' })).not.toBeInTheDocument();
   });
 
-  it('shows the warnings the server computes, like a threshold below the board one (spec 5.2)', async () => {
+  it('shows the warnings the server computes, like a threshold below the board one', async () => {
     renderDetail({
       ...TINYGS,
       warnings: [

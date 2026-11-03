@@ -2,7 +2,7 @@ from django.db import migrations
 
 
 def copy_station_to_rotor(apps, schema_editor):
-    """The location moves from the plugin instance to its board (spec 5.2).
+    """The location moves from the plugin instance to its board.
 
     A board that already has a location keeps it, and when several instances
     share a board the oldest one wins. An instance without a board has nowhere

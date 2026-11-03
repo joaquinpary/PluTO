@@ -24,7 +24,7 @@ interface Props {
 }
 
 /**
- * Downloads a history query as CSV (every row of the range, Task 9). It goes
+ * Downloads a history query as CSV (every row of the range). It goes
  * through the api client like any other call, so it carries the token and
  * shares its single refresh: a plain link could not send the Authorization header.
  */

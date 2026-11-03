@@ -13,7 +13,7 @@ export async function login(username: string, password: string): Promise<boolean
   throw new Error(`Login answered HTTP ${response.status}`);
 }
 
-/** Forgets the session and blacklists its refresh token (spec 3.3). */
+/** Forgets the session and blacklists its refresh token. */
 export async function logout(): Promise<void> {
   const refresh = getRefresh();
   clearTokens();

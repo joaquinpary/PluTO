@@ -7,7 +7,7 @@ import { api, fieldErrors } from '../../api/client';
 import { useSetupStatus } from '../../api/queries';
 import { AuthCard } from '../../components/AuthCard';
 
-/** First start: creates the only user (spec 3.4) and logs in with it. */
+/** First start: creates the only user and logs in with it. */
 export function SetupPage() {
   const queryClient = useQueryClient();
   const setup = useSetupStatus();

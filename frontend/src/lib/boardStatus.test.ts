@@ -15,7 +15,7 @@ describe('boardStatus', () => {
     expect(boardStatus({ online: true, last_state_at: secondsAgo(31) }, now)).toBe('no_data');
   });
 
-  it('is no_data for a new board that never sent a state (Review Focus 2)', () => {
+  it('is no_data for a new board that never sent a state', () => {
     expect(boardStatus({ online: true, last_state_at: null }, now)).toBe('no_data');
   });
 

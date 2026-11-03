@@ -18,7 +18,7 @@ function renderBoard(board: Board = boardRow()) {
 }
 
 describe('BoardDetailPage', () => {
-  it('shows a board without any state as "Sin datos" (Review Focus 2), with its instances and its history', async () => {
+  it('shows a board without any state as "Sin datos", with its instances and its history', async () => {
     renderBoard(boardRow({ last_state_at: null, plugins: [{ plugin_uuid: PLUGIN.plugin_uuid, name: PLUGIN.name, status: 'STOPPED' }] }));
 
     expect(await screen.findByText(/último dato: Sin datos/)).toBeInTheDocument();
@@ -26,7 +26,7 @@ describe('BoardDetailPage', () => {
     expect(screen.getByRole('link', { name: 'Ver historial' })).toHaveAttribute('href', `/history?board=${DEVICE}`);
   });
 
-  it('saves an azimuth window that wraps through north (Review Focus 3)', async () => {
+  it('saves an azimuth window that wraps through north', async () => {
     let sent: unknown;
     server.use(
       http.patch('/api/boards/:deviceId', async ({ request }) => {
@@ -46,7 +46,7 @@ describe('BoardDetailPage', () => {
     expect(sent).toMatchObject({ name: 'Terraza', min_elevation_deg: 10, min_azimuth_deg: 300, max_azimuth_deg: 60 });
   });
 
-  it('rejects half an azimuth window without sending it (Review Focus 3)', async () => {
+  it('rejects half an azimuth window without sending it', async () => {
     let patched = false;
     server.use(
       http.patch('/api/boards/:deviceId', () => {

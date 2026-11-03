@@ -94,7 +94,7 @@ export function validateBoard(values: BoardFormValues): Record<string, string> {
   const hasEnd = !isBlank(values.max_azimuth_deg);
   if (hasStart !== hasEnd) errors[hasStart ? 'max_azimuth_deg' : 'min_azimuth_deg'] = HALF_WINDOW;
 
-  // Half a location is no place at all, and would silently mean none (Rotor.clean, Task 3).
+  // Half a location is no place at all, and would silently mean none (Rotor.clean).
   const hasLatitude = !isBlank(values.latitude_deg);
   const hasLongitude = !isBlank(values.longitude_deg);
   if (hasLatitude !== hasLongitude) errors[hasLatitude ? 'longitude_deg' : 'latitude_deg'] = HALF_LOCATION;

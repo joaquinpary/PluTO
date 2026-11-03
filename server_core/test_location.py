@@ -50,7 +50,7 @@ class RotorLocationTests(SimpleTestCase):
 
 
 class LocationMigrationTests(TransactionTestCase):
-    """0009 moves the station from the instances to their boards (spec 5.2)."""
+    """0009 moves the station from the instances to their boards."""
 
     before = [('server_core', '0008_rotor_location')]
     after = [('server_core', '0009_move_station_to_rotor')]

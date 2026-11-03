@@ -43,7 +43,7 @@ function isActive(to: string, pathname: string): boolean {
   return to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`);
 }
 
-/** Side navigation on a computer; on a phone it folds behind the burger (spec 4, RNF-13.1). */
+/** Side navigation on a computer; on a phone it folds behind the burger (RNF-13.1). */
 export function AppLayout() {
   const [opened, { toggle, close }] = useDisclosure();
   const { pathname } = useLocation();

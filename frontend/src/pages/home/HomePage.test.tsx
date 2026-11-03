@@ -37,7 +37,7 @@ describe('HomePage', () => {
     await expect.poll(() => sky.querySelector('polyline')).not.toBeNull();
   });
 
-  it('shows "Sin datos" for a board that never sent a state, next to a healthy one (Review Focus 2)', async () => {
+  it('shows "Sin datos" for a board that never sent a state, next to a healthy one', async () => {
     api({ boards: [liveBoard(), NEW_BOARD] });
 
     renderWithProviders(<HomePage />);
@@ -88,7 +88,7 @@ describe('HomePage', () => {
     expect(screen.getByRole('link', { name: 'Terraza' })).toBeInTheDocument();
   }, 10_000);
 
-  it('stops polling while the tab is hidden and picks up again when it comes back (spec 6)', async () => {
+  it('stops polling while the tab is hidden and picks up again when it comes back', async () => {
     let calls = 0;
     api();
     server.use(

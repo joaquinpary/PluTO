@@ -1,4 +1,4 @@
-"""The settings a plugin type declares, and the checks they imply (spec 5.2).
+"""The settings a plugin type declares, and the checks they imply.
 
 A handler lists its settings in config_fields. The front end builds the form
 from them, and validate_config applies the same rules when the configuration is

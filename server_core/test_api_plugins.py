@@ -106,7 +106,7 @@ class PluginListTests(PluginApiTestCase):
         self.assertEqual({plugin['docker_status'] for plugin in plugins}, {'unknown'})
 
     def test_docker_status_is_unknown_when_the_listing_fails(self):
-        # What container_statuses() answers when Docker errs (Task 2): it logs
+        # What container_statuses() answers when Docker errs: it logs
         # the APIError itself and never raises it.
         self.orchestrator.container_statuses.return_value = None
 
@@ -427,7 +427,7 @@ class PluginLogsTests(PluginApiTestCase):
                 self.assertIn('tail', response.json())
 
     def test_an_instance_without_a_container_is_not_found(self):
-        # container_logs() answers None without a container (Task 2).
+        # container_logs() answers None without a container.
         self.orchestrator.container_logs.return_value = None
 
         response = self.client.get(self.url)

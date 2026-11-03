@@ -1,4 +1,4 @@
-"""The history the front end browses and exports (spec §4.4): what the boards
+"""The history the front end browses and exports: what the boards
 reported, what the plugins sent them and produced, and the results
 computed from them."""
 from datetime import timedelta
@@ -47,7 +47,7 @@ def _query(serializer_class, request):
 
 # CSVRenderer builds the whole file before sending it (about 3 600 rows/s):
 # a week of states at one per second takes a few minutes, well inside nginx's 600 s.
-# shortcut: a cap instead of streaming; values() + StreamingHttpResponse if longer exports are needed.
+# A cap instead of streaming: values() and a StreamingHttpResponse if longer exports are ever needed.
 CSV_MAX_RANGE = timedelta(days=7)
 
 
@@ -125,7 +125,7 @@ class BoardStatesSeriesView(APIView):
         params = _query(SeriesQuerySerializer, request)
         states = RotorState.objects.filter(rotor=rotor, received_at__gte=params['from'], received_at__lt=params['to'])
         # The bounds first, in one aggregate query, so the rows can then be
-        # walked once without holding them (Review Focus 4).
+        # walked once without holding them.
         bounds = states.aggregate(start=Min('received_at'), end=Max('received_at'), count=Count('pk'))
         if not bounds['count']:
             return Response(SeriesSerializer({'points': []}).data)

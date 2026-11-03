@@ -1,5 +1,5 @@
 /**
- * A board whose last state is older than this shows "sin datos" (spec 6): it
+ * A board whose last state is older than this shows "sin datos": it
  * publishes every 1 s while tracking and every 10 s at rest.
  */
 export const STALE_AFTER_MS = 30_000;

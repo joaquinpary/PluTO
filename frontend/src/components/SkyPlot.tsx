@@ -19,7 +19,7 @@ const CARDINALS: [string, number][] = [
   ['O', 27000],
 ];
 
-/** Polar sky: zenith in the centre, horizon on the rim, rings every 30° of elevation (spec 4.1). */
+/** Polar sky: zenith in the centre, horizon on the rim, rings every 30° of elevation. */
 export function SkyPlot({ antennas, tracks }: { antennas: SkyAntenna[]; tracks: SkyTrack[] }) {
   const line = 'var(--mantine-color-dimmed)';
 

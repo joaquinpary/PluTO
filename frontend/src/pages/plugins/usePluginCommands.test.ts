@@ -8,7 +8,7 @@ describe('launchErrorMessage', () => {
     expect(launchErrorMessage(new ApiError(504, '<html>Gateway Timeout</html>'))).toMatch(/Sincronizar/);
   });
 
-  it('explains a 409 in Spanish, naming the instance that drives the board when it is known (spec 6)', () => {
+  it('explains a 409 in Spanish, naming the instance that drives the board when it is known', () => {
     const busy = new ApiError(409, { detail: 'tinygs-omni already drives a1b2c3d4e5f6 (RF-31.1).' });
 
     expect(launchErrorMessage(busy, 'tinygs-omni')).toBe(

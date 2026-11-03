@@ -20,8 +20,8 @@ const GENERAL_KEYS = new Set(['detail', 'non_field_errors']);
 
 /**
  * Splits a DRF error body into messages per field and general messages.
- * The config of a plugin comes back nested ({"config": {"tinygs_device": [...]}},
- * Task 6), so its keys land next to the top-level ones, where the form shows them.
+ * The config of a plugin comes back nested ({"config": {"tinygs_device": [...]}}),
+ * so its keys land next to the top-level ones, where the form shows them.
  */
 export function splitErrors(body: unknown): SplitErrors {
   const result: SplitErrors = { fields: {}, general: [] };

@@ -96,7 +96,7 @@ class BoardStatesTests(FrontTestCase):
 
 
 class LongRangeTests(FrontTestCase):
-    """Review Focus 4: a whole day at one state per second."""
+    """A whole day at one state per second."""
 
     @classmethod
     def setUpTestData(cls):
@@ -224,7 +224,7 @@ class PluginDataHistoryTests(FrontTestCase):
         })
 
     def test_missing_or_odd_fields_are_null_and_the_payload_stays(self):
-        # Review Focus 5: an rx without rssi, a tracking without a satellite, the
+        # An rx without rssi, a tracking without a satellite, the
         # placeholder a station sends before it gets one, a payload the ingester
         # wrapped, odd types, and a plugin type nobody knows.
         weather = PluginInstance.objects.create(name='weather-1', plugin_type='weather')

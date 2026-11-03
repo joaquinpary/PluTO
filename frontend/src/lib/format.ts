@@ -15,7 +15,7 @@ export function formatAge(iso: string, now: number): string {
   return `hace ${Math.floor(hours / 24)} d`;
 }
 
-/** An instant from the API (UTC, ISO 8601) in the browser's local time (spec 6). */
+/** An instant from the API (UTC, ISO 8601) in the browser's local time. */
 export function formatDateTime(iso: string | null): string {
   return iso === null ? '—' : new Date(iso).toLocaleString('es-AR');
 }

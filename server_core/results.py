@@ -1,4 +1,4 @@
-"""Results for the thesis, computed from what the server stored (spec §5.3).
+"""Results for the thesis, computed from what the server stored.
 
 A pass is the run of BATCH orders a plugin sent its board up to the HOLD
 that ended it. Its pointing error comes from the board itself when it has

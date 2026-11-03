@@ -47,7 +47,7 @@ describe('api client', () => {
     expect(response.status).toBe(200);
   });
 
-  it('refreshes ONCE when two requests get 401 at the same time (Review Focus 1)', async () => {
+  it('refreshes ONCE when two requests get 401 at the same time', async () => {
     setTokens({ access: 'expired', refresh: 'r1' });
     const refreshBodies: unknown[] = [];
     server.use(

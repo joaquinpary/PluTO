@@ -52,7 +52,7 @@ export function pluginRow(overrides: Partial<Plugin> = {}): Plugin {
   };
 }
 
-// --- Instances and boards (Task 16) --------------------------------------------
+// --- Instances and boards ----------------------------------------------------
 
 export const OTHER_UUID = '7f1e2d3c-4b5a-4968-8776-655443322110';
 
@@ -62,8 +62,8 @@ function configField(field: Pick<ConfigFieldRow, 'name' | 'label' | 'type'> & Pa
   return { help: '', required: false, default: null, min: null, max: null, choices: null, pattern: null, ...field };
 }
 
-// Labels, choices and patterns as the handlers declare them (Task 4,
-// plugin_handlers/tinygs.py and file_tracker.py), so a fixture reads like the real API.
+// Labels, choices and patterns as the handlers declare them
+// (plugin_handlers/tinygs.py and file_tracker.py), so a fixture reads like the real API.
 export const TINYGS_TYPE: PluginType = {
   type: 'tinygs',
   label: 'TinyGS',
