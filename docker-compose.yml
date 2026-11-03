@@ -18,15 +18,19 @@ services:
       context: .
       dockerfile: Dockerfile
     image: pluto/server:latest
-    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
+    # gunicorn, not runserver: the front end polls every second while the
+    # plugins ingest. Launching a plugin builds its image the first time and can
+    # take minutes, hence the 600 s timeout, the same as nginx's.
+    command: sh -c "python manage.py migrate --noinput && exec gunicorn pluto.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 4 --timeout 600"
     environment: *django-env
     depends_on:
       postgres:
         condition: service_healthy
       mosquitto:
         condition: service_started
+    # Only for working on this same machine. From the LAN, PluTO is the web container.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - .:/app
     restart: unless-stopped
