@@ -12,8 +12,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .api import Conflict
-from .serializers import HealthSerializer, PasswordChangeSerializer, SetupSerializer, SetupStatusSerializer, TokenPairSerializer
+from ..serializers import HealthSerializer, PasswordChangeSerializer, SetupSerializer, SetupStatusSerializer, TokenPairSerializer
+from .exceptions import Conflict
 
 
 # Any constant: the key of the Postgres advisory lock that serialises first-run setups.

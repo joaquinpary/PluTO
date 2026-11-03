@@ -3,7 +3,7 @@ from unittest.mock import patch
 from .test_api import FrontTestCase
 
 
-@patch('server_core.api_logs.PluginOrchestrator')
+@patch('server_core.api.logs.PluginOrchestrator')
 class ServiceLogsApiTests(FrontTestCase):
     def test_returns_the_last_lines_of_a_service(self, orchestrator_cls):
         orchestrator_cls.return_value.service_logs.return_value = ['Starting gunicorn', 'Booting worker with pid: 8']

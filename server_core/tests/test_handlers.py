@@ -4,9 +4,9 @@ from django.db import IntegrityError
 from django.db.models import ProtectedError
 from django.test import SimpleTestCase, TestCase
 
-from .models import PluginData, PluginInstance
-from .plugin_handlers import PLUGIN_HANDLERS
-from .plugin_handlers.file_tracker import MAX_FILE_BYTES, build_file_message
+from ..models import PluginData, PluginInstance
+from ..plugin_handlers import PLUGIN_HANDLERS
+from ..plugin_handlers.file_tracker import MAX_FILE_BYTES, build_file_message
 
 
 class TinyGSHandlerTests(SimpleTestCase):

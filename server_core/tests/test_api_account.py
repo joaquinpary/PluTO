@@ -15,14 +15,14 @@ STRONG_PASSWORD = 'correct-horse-battery-staple'
 
 class HealthTests(SimpleTestCase):
     def test_answers_ok_when_the_database_answers(self):
-        with patch('server_core.api_account.connection'):
+        with patch('server_core.api.account.connection'):
             response = self.client.get('/api/health')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'status': 'ok', 'service': 'pluto-backend', 'database': 'ok'})
 
     def test_answers_503_when_the_database_is_unreachable(self):
-        with patch('server_core.api_account.connection') as connection:
+        with patch('server_core.api.account.connection') as connection:
             connection.cursor.side_effect = OperationalError('password authentication failed')
             response = self.client.get('/api/health')
 
@@ -30,7 +30,7 @@ class HealthTests(SimpleTestCase):
         self.assertEqual(response.json()['database'], 'unreachable')
 
     def test_a_stale_token_does_not_turn_it_into_a_401(self):
-        with patch('server_core.api_account.connection'):
+        with patch('server_core.api.account.connection'):
             response = self.client.get('/api/health', HTTP_AUTHORIZATION='Bearer expired-or-garbage')
 
         self.assertEqual(response.status_code, 200)

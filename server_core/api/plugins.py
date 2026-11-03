@@ -12,18 +12,21 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import lifecycle
-from .lifecycle import LifecycleError
-from .models import PluginInstance
-from .orchestrator import PluginOrchestrator
-from .plugin_handlers import PLUGIN_HANDLERS
-from .serializers import (
+from .. import lifecycle
+from ..lifecycle import LifecycleError
+from ..models import PluginInstance, Rotor
+from ..orchestrator import PluginOrchestrator
+from ..plugin_handlers import PLUGIN_HANDLERS
+from ..serializers import (
+    BindBoardSerializer,
     CoordinatesFileSerializer,
     LogsQuerySerializer,
     LogsSerializer,
+    PluginBoardSerializer,
     PluginSerializer,
     PluginTypeSerializer,
 )
+from .exceptions import Conflict
 
 logger = logging.getLogger(__name__)
 
@@ -277,3 +280,49 @@ class PluginLogsView(APIView):
             # error while looking it up is None too; the orchestrator logs it.
             raise NotFound(f'{plugin.name} has no container. Launch it first.')
         return Response(LogsSerializer({'source': plugin.name, 'lines': lines}).data)
+
+
+class PluginBoardView(APIView):
+    def _plugin(self, plugin_uuid):
+        plugin = PluginInstance.objects.select_related('rotor').filter(plugin_uuid=plugin_uuid).first()
+        if plugin is None:
+            raise NotFound('No plugin instance with that uuid.')
+        if plugin.status == PluginInstance.Status.RUNNING:
+            # The board reaches the container as ROTOR_DEVICE_ID when it is
+            # launched, so a change would not take effect until the next launch.
+            raise Conflict('Stop the plugin before changing its board.')
+        return plugin
+
+    @extend_schema(
+        summary='Bind a board to a plugin instance',
+        request=BindBoardSerializer,
+        responses={
+            200: PluginBoardSerializer,
+            404: OpenApiResponse(description='Unknown plugin, or a board not registered yet (scan first).'),
+            409: OpenApiResponse(description='The plugin is running, or another running instance drives the board.'),
+        },
+    )
+    def put(self, request, plugin_uuid):
+        plugin = self._plugin(plugin_uuid)
+        serializer = BindBoardSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        rotor = Rotor.objects.filter(device_id=serializer.validated_data['device_id']).first()
+        if rotor is None:
+            raise NotFound('Unknown board. Scan for boards first.')
+
+        driven = PluginInstance.objects.filter(rotor=rotor, status=PluginInstance.Status.RUNNING)
+        if driven.exclude(pk=plugin.pk).exists():
+            raise Conflict('Another running plugin instance already drives that board (RF-31.1).')
+
+        plugin.rotor = rotor
+        plugin.save(update_fields=['rotor', 'updated_at'])
+        return Response(PluginBoardSerializer(plugin).data)
+
+    @extend_schema(summary='Unbind the board of a plugin instance', request=None,
+                   responses={200: PluginBoardSerializer})
+    def delete(self, request, plugin_uuid):
+        plugin = self._plugin(plugin_uuid)
+        plugin.rotor = None
+        plugin.save(update_fields=['rotor', 'updated_at'])
+        return Response(PluginBoardSerializer(plugin).data)

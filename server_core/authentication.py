@@ -10,7 +10,7 @@ from rest_framework.authentication import BaseAuthentication, get_authorization_
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import BasePermission
 
-from .api_tokens import hash_token
+from .tokens import hash_token
 from .models import PluginInstance
 
 

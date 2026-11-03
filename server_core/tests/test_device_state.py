@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 from django.test import SimpleTestCase, TestCase
 
-from .device_state import parse_device_topic, store_state, store_status
-from .models import Rotor, RotorState
+from ..device_state import parse_device_topic, store_state, store_status
+from ..models import Rotor, RotorState
 
 DEVICE_ID = 'a1b2c3d4e5f6'
 

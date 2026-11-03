@@ -1,8 +1,8 @@
 from django.test import SimpleTestCase
 
-from .plugin_handlers import PLUGIN_HANDLERS, get_handler
-from .plugin_handlers.base import BasePluginHandler
-from .plugin_handlers.fields import (
+from ..plugin_handlers import PLUGIN_HANDLERS, get_handler
+from ..plugin_handlers.base import BasePluginHandler
+from ..plugin_handlers.fields import (
     FIELD_TYPES, REQUIRED, apply_defaults, config_errors, config_field, validate_config,
 )
 

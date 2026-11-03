@@ -2,7 +2,7 @@
 
 Pure parsing plus the ORM writes for what the board publishes on
 device/<device_id>/status and device/<device_id>/state. The plugin bound to the
-board forwards both to /api/device/... (server_core/api.py), and the board scan
+board forwards both to /api/device/... (server_core/api/ingest.py), and the board scan
 reads the retained status directly (board_scan.py).
 """
 import json

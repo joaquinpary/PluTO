@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from .downsample import downsample
-from .models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
+from ..downsample import downsample
+from ..models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
 from .test_api import DEVICE_ID, OTHER_DEVICE_ID, FrontTestCase
 
 T0 = datetime(2026, 10, 1, tzinfo=timezone.utc)
@@ -135,7 +135,7 @@ class LongRangeTests(FrontTestCase):
         self.assertEqual(len(points), 2000)
 
     def test_the_series_walks_the_rows_instead_of_listing_them(self):
-        with patch('server_core.api_history.downsample', wraps=downsample) as thin:
+        with patch('server_core.api.history.downsample', wraps=downsample) as thin:
             response = self.client.get(f'{self.url}/series', {'from': iso(at(0)), 'to': iso(at(DAY))})
 
         self.assertEqual(response.status_code, 200)

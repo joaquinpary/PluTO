@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from django.test import Client, SimpleTestCase
 
-from .models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
-from .plugin_handlers.tinygs import satellite_from_tracking
+from ..models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
+from ..plugin_handlers.tinygs import satellite_from_tracking
 from .test_api import DEVICE_ID, OTHER_DEVICE_ID, FrontTestCase, running_plugin
 
 BOARD_KEYS = {

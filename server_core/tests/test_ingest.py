@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 
 from django.test import SimpleTestCase, TestCase
 
-from .ingest import DUPLICATE, INGESTED, envelope_fields, store_document
-from .models import PluginData, PluginInstance
+from ..ingest import DUPLICATE, INGESTED, envelope_fields, store_document
+from ..models import PluginData, PluginInstance
 
 PLUGIN_ID = '3f2a-uuid'
 INGEST_TOPIC = '/api/plugin-data/tracking'

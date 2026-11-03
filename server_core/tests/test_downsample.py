@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from django.test import SimpleTestCase
 
-from .downsample import downsample
+from ..downsample import downsample
 
 
 def rows(*times):

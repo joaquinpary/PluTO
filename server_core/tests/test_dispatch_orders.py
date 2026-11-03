@@ -2,8 +2,8 @@ from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 from django.test import SimpleTestCase, TestCase
 
-from .dispatch_orders import record_order
-from .models import DispatchOrder, PluginInstance, Rotor
+from ..dispatch_orders import record_order
+from ..models import DispatchOrder, PluginInstance, Rotor
 
 DEVICE_ID = 'a1b2c3d4e5f6'
 

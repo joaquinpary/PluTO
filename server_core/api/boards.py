@@ -1,13 +1,20 @@
-"""The boards for the front end: their settings, what they are doing now and the pass in course."""
+"""The boards for the front end: the list and the scan, their settings, what they are doing now and the pass in course."""
+import logging
+
 from django.db.models import OuterRef, Prefetch, Subquery
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
-from .plugin_handlers.tinygs import satellite_from_tracking
-from .serializers import BoardLiveSerializer, BoardSerializer, TrackSerializer
+from ..board_scan import BrokerUnavailable, scan_boards
+from ..device_state import store_status
+from ..models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
+from ..plugin_handlers.tinygs import satellite_from_tracking
+from ..serializers import BoardLiveSerializer, BoardSerializer, TrackSerializer
+from .exceptions import ServiceUnavailable
+
+logger = logging.getLogger(__name__)
 
 UNKNOWN_BOARD = OpenApiResponse(description='No board with that device_id.')
 
@@ -119,3 +126,36 @@ class BoardTrackView(APIView):
             ],
         }
         return Response(TrackSerializer(track).data)
+
+
+def _boards_response():
+    return Response(BoardSerializer(Rotor.objects.prefetch_related('plugin_instances'), many=True).data)
+
+
+class BoardsView(APIView):
+    @extend_schema(summary='List the registered boards', description='Does not touch the broker.',
+                   responses=BoardSerializer(many=True))
+    def get(self, request):
+        return _boards_response()
+
+
+class BoardScanView(APIView):
+    @extend_schema(
+        summary='Ask the broker which boards exist',
+        description='Registers the new ones, refreshes `online` on the known ones, and lists them all.',
+        request=None,
+        responses={200: BoardSerializer(many=True), 503: OpenApiResponse(description='The broker did not answer.')},
+    )
+    def post(self, request):
+        try:
+            found = scan_boards()
+        except BrokerUnavailable as exc:
+            logger.warning('Board scan failed: %s', exc)
+            raise ServiceUnavailable('Could not reach the broker.')
+
+        for device_id, payload in found.items():
+            # The same path a live status report takes: registers the board and
+            # moves status_changed_at only on a real change.
+            store_status(device_id, payload)
+
+        return _boards_response()

@@ -5,9 +5,9 @@ from unittest.mock import MagicMock, patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 
-from .lifecycle import LifecycleError
-from .models import PluginInstance, Rotor
-from .orchestrator import PluginOrchestrator
+from ..lifecycle import LifecycleError
+from ..models import PluginInstance, Rotor
+from ..orchestrator import PluginOrchestrator
 from .test_api import DEVICE_ID, OTHER_DEVICE_ID, FrontTestCase
 
 PLUGIN_KEYS = {
@@ -33,7 +33,7 @@ class PluginApiTestCase(FrontTestCase):
     def setUp(self):
         super().setUp()
         self.orchestrator = fake_orchestrator()
-        patcher = patch('server_core.api_plugins.PluginOrchestrator', return_value=self.orchestrator)
+        patcher = patch('server_core.api.plugins.PluginOrchestrator', return_value=self.orchestrator)
         self.orchestrator_cls = patcher.start()
         self.addCleanup(patcher.stop)
 

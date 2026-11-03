@@ -108,7 +108,7 @@ class PluginOrchestrator:
         - instance_id: A unique identifier (e.g. database ID)
         - station_coordinates: the location of the board bound to the instance,
           {lat, lon, alt}, or None when there is no board or it has no location
-        - api_token: the plain token the container sends to /api/ (see api_tokens.py)
+        - api_token: the plain token the container sends to /api/ (see tokens.py)
         - rotor_device_id: device_id of the board bound to the instance, if any
         - kwargs: Additional environment variables (e.g. FILE_PATH)
         """

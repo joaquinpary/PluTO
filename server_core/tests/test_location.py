@@ -3,7 +3,7 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import SimpleTestCase, TransactionTestCase
 
-from .models import Rotor
+from ..models import Rotor
 
 DEVICE_ID = 'a1b2c3d4e5f6'
 

@@ -4,8 +4,8 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .orchestrator import LOG_SERVICES, PluginOrchestrator
-from .serializers import LogsQuerySerializer, LogsSerializer
+from ..orchestrator import LOG_SERVICES, PluginOrchestrator
+from ..serializers import LogsQuerySerializer, LogsSerializer
 
 
 class ServiceLogsView(APIView):

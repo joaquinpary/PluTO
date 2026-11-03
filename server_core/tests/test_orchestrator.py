@@ -7,7 +7,7 @@ from django.conf import settings
 
 from django.test import SimpleTestCase, override_settings
 
-from .orchestrator import PluginOrchestrator
+from ..orchestrator import PluginOrchestrator
 
 
 class PluginOrchestratorTests(SimpleTestCase):

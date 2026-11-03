@@ -1,14 +1,7 @@
-"""The REST API under /api/ (docs/contracts/ingest-api.md).
+"""What the plugin containers send: their data, their board's reports and their dispatch orders.
 
-Two kinds of caller, and every view accepts exactly one of them:
-
-- Plugin containers send their data and their board's reports with
-  `Authorization: Plugin <token>` (authentication.py). The token decides the
-  instance, and the instance decides the board, so no URL carries a plugin or
-  device id a plugin could use to speak for someone else.
-- The person using PluTO, through the front end, with `Authorization: Bearer
-  <jwt>` from /api/auth/token. That is the project-wide default (settings.py),
-  so the front-end views declare nothing.
+Every view here authenticates with `Authorization: Plugin <token>`: the token
+decides the instance, and the instance decides the board.
 """
 import json
 import logging
@@ -19,28 +12,23 @@ from django.http import JsonResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
-from rest_framework.exceptions import APIException, NotFound, PermissionDenied
+from rest_framework.exceptions import APIException, PermissionDenied
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .authentication import IsPluginInstance, PluginTokenAuthentication
-from .board_scan import BrokerUnavailable, scan_boards
-from .device_state import store_state, store_status
-from .dispatch_orders import record_order
-from .ingest import DUPLICATE, MESSAGE_TYPE_RE, envelope_fields, store_document
-from .models import PluginInstance, Rotor
-from .plugin_handlers import PLUGIN_HANDLERS
-from .serializers import (
+from ..authentication import IsPluginInstance, PluginTokenAuthentication
+from ..device_state import store_state, store_status
+from ..dispatch_orders import record_order
+from ..ingest import DUPLICATE, MESSAGE_TYPE_RE, envelope_fields, store_document
+from ..plugin_handlers import PLUGIN_HANDLERS
+from ..serializers import (
     BatchResultSerializer,
     DispatchOrderSerializer,
     RotorLimitsSerializer,
-    BindBoardSerializer,
-    BoardSerializer,
     DeviceReportResultSerializer,
     EnvelopeSerializer,
     IngestResultSerializer,
-    PluginBoardSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,16 +37,6 @@ logger = logging.getLogger(__name__)
 # binary one by a third before it is wrapped, so the envelope gets more room.
 MAX_ENVELOPE_BYTES = 128 * 1024
 MAX_BATCH = 100
-
-
-class Conflict(APIException):
-    status_code = status.HTTP_409_CONFLICT
-    default_code = 'conflict'
-
-
-class ServiceUnavailable(APIException):
-    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    default_code = 'service_unavailable'
 
 
 class PayloadTooLarge(APIException):
@@ -250,84 +228,3 @@ class DispatchOrdersView(PluginView):
                     order['points'], order['reason'],
                 )
         return Response({'stored': len(orders)}, status=201)
-
-
-# --- Front end ---------------------------------------------------------------
-
-def _boards_response():
-    return Response(BoardSerializer(Rotor.objects.prefetch_related('plugin_instances'), many=True).data)
-
-
-class BoardsView(APIView):
-    @extend_schema(summary='List the registered boards', description='Does not touch the broker.',
-                   responses=BoardSerializer(many=True))
-    def get(self, request):
-        return _boards_response()
-
-
-class BoardScanView(APIView):
-    @extend_schema(
-        summary='Ask the broker which boards exist',
-        description='Registers the new ones, refreshes `online` on the known ones, and lists them all.',
-        request=None,
-        responses={200: BoardSerializer(many=True), 503: OpenApiResponse(description='The broker did not answer.')},
-    )
-    def post(self, request):
-        try:
-            found = scan_boards()
-        except BrokerUnavailable as exc:
-            logger.warning('Board scan failed: %s', exc)
-            raise ServiceUnavailable('Could not reach the broker.')
-
-        for device_id, payload in found.items():
-            # The same path a live status report takes: registers the board and
-            # moves status_changed_at only on a real change.
-            store_status(device_id, payload)
-
-        return _boards_response()
-
-
-class PluginBoardView(APIView):
-    def _plugin(self, plugin_uuid):
-        plugin = PluginInstance.objects.select_related('rotor').filter(plugin_uuid=plugin_uuid).first()
-        if plugin is None:
-            raise NotFound('No plugin instance with that uuid.')
-        if plugin.status == PluginInstance.Status.RUNNING:
-            # The board reaches the container as ROTOR_DEVICE_ID when it is
-            # launched, so a change would not take effect until the next launch.
-            raise Conflict('Stop the plugin before changing its board.')
-        return plugin
-
-    @extend_schema(
-        summary='Bind a board to a plugin instance',
-        request=BindBoardSerializer,
-        responses={
-            200: PluginBoardSerializer,
-            404: OpenApiResponse(description='Unknown plugin, or a board not registered yet (scan first).'),
-            409: OpenApiResponse(description='The plugin is running, or another running instance drives the board.'),
-        },
-    )
-    def put(self, request, plugin_uuid):
-        plugin = self._plugin(plugin_uuid)
-        serializer = BindBoardSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        rotor = Rotor.objects.filter(device_id=serializer.validated_data['device_id']).first()
-        if rotor is None:
-            raise NotFound('Unknown board. Scan for boards first.')
-
-        driven = PluginInstance.objects.filter(rotor=rotor, status=PluginInstance.Status.RUNNING)
-        if driven.exclude(pk=plugin.pk).exists():
-            raise Conflict('Another running plugin instance already drives that board (RF-31.1).')
-
-        plugin.rotor = rotor
-        plugin.save(update_fields=['rotor', 'updated_at'])
-        return Response(PluginBoardSerializer(plugin).data)
-
-    @extend_schema(summary='Unbind the board of a plugin instance', request=None,
-                   responses={200: PluginBoardSerializer})
-    def delete(self, request, plugin_uuid):
-        plugin = self._plugin(plugin_uuid)
-        plugin.rotor = None
-        plugin.save(update_fields=['rotor', 'updated_at'])
-        return Response(PluginBoardSerializer(plugin).data)

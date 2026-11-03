@@ -2,8 +2,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from django.test import SimpleTestCase, TestCase
 
-from .models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
-from .results import pointing_error, reception_by_day, sky_distance_cdeg, split_passes, target_at
+from ..models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
+from ..results import pointing_error, reception_by_day, sky_distance_cdeg, split_passes, target_at
 from .test_api import DEVICE_ID, OTHER_DEVICE_ID, FrontTestCase
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)

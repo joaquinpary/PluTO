@@ -10,11 +10,11 @@ from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .api import MAX_BATCH, MAX_ENVELOPE_BYTES
-from .api_tokens import TOKEN_PREFIX, hash_token, issue_token
-from .board_scan import BrokerUnavailable, record_status, scan_boards
-from .models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
-from .plugin_handlers import PLUGIN_HANDLERS
+from ..api.ingest import MAX_BATCH, MAX_ENVELOPE_BYTES
+from ..tokens import TOKEN_PREFIX, hash_token, issue_token
+from ..board_scan import BrokerUnavailable, record_status, scan_boards
+from ..models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
+from ..plugin_handlers import PLUGIN_HANDLERS
 
 DEVICE_ID = 'a1b2c3d4e5f6'
 OTHER_DEVICE_ID = '0a0b0c0d0e0f'
@@ -345,13 +345,13 @@ class BoardsTests(FrontTestCase):
         ])
         self.assertEqual(boards[0]['plugins'], [])
 
-    @patch('server_core.api.scan_boards')
+    @patch('server_core.api.boards.scan_boards')
     def test_listing_does_not_touch_the_broker(self, scan):
         self.client.get('/api/boards')
         scan.assert_not_called()
 
 
-@patch('server_core.api.scan_boards')
+@patch('server_core.api.boards.scan_boards')
 class ScanTests(FrontTestCase):
     def test_registers_new_boards_and_refreshes_online(self, scan):
         Rotor.objects.create(device_id=OTHER_DEVICE_ID, online=True)
@@ -377,7 +377,7 @@ class ScanTests(FrontTestCase):
     def test_an_unreachable_broker_is_service_unavailable(self, scan):
         scan.side_effect = BrokerUnavailable('connection refused')
 
-        with self.assertLogs('server_core.api', level='WARNING'):
+        with self.assertLogs('server_core.api.boards', level='WARNING'):
             response = self.client.post('/api/boards/scan')
 
         self.assertEqual(response.status_code, 503)

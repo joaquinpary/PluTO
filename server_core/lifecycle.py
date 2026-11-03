@@ -9,7 +9,7 @@ import logging
 
 from django.db import transaction
 
-from .api_tokens import issue_token
+from .tokens import issue_token
 from .models import PluginInstance, Rotor
 from .mqtt_publish import publish_retained
 from .orchestrator import PluginOrchestrator

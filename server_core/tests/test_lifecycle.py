@@ -4,10 +4,10 @@ from unittest.mock import patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
-from .api_tokens import hash_token
-from .lifecycle import LifecycleError, delete, launch, send_coordinates_file, stop, sync
-from .models import DispatchOrder, PluginData, PluginInstance, Rotor
-from .plugin_handlers.file_tracker import MAX_FILE_BYTES
+from ..tokens import hash_token
+from ..lifecycle import LifecycleError, delete, launch, send_coordinates_file, stop, sync
+from ..models import DispatchOrder, PluginData, PluginInstance, Rotor
+from ..plugin_handlers.file_tracker import MAX_FILE_BYTES
 
 DEVICE_ID = 'a1b2c3d4e5f6'
 RUNNING = PluginInstance.Status.RUNNING
