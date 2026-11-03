@@ -2,3 +2,6 @@ node_modules/
 dist/
 # The root .gitignore drops every lib/ directory (Python packaging); this one is source code.
 !src/lib/
+
+test-results/
+playwright-report/
