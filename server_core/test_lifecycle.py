@@ -127,6 +127,32 @@ class LaunchTests(TestCase):
 
         self.assertEqual(self.spawned(orchestrator_cls)['plugin_type'], 'tinygs')
 
+    def test_hands_the_container_the_location_of_its_board(self, orchestrator_cls):
+        orchestrator_cls.return_value.spawn_plugin.return_value = (True, 'container-123')
+        self.rotor.latitude_deg, self.rotor.longitude_deg, self.rotor.altitude_m = -31.4, -64.2, 470.0
+        self.rotor.save()
+
+        launch(self.plugin)
+
+        self.assertEqual(self.spawned(orchestrator_cls)['station_coordinates'], {'lat': -31.4, 'lon': -64.2, 'alt': 470.0})
+
+    def test_a_board_without_a_location_hands_none(self, orchestrator_cls):
+        orchestrator_cls.return_value.spawn_plugin.return_value = (True, 'container-123')
+
+        launch(self.plugin)
+
+        self.assertIsNone(self.spawned(orchestrator_cls)['station_coordinates'])
+
+    def test_an_instance_without_a_board_hands_no_location_and_no_board(self, orchestrator_cls):
+        orchestrator_cls.return_value.spawn_plugin.return_value = (True, 'container-123')
+        plugin = PluginInstance.objects.create(name='tinygs-2', plugin_type='tinygs', config={'tinygs_device': 'My_TinyGS'})
+
+        launch(plugin)
+
+        kwargs = self.spawned(orchestrator_cls)
+        self.assertIsNone(kwargs['station_coordinates'])
+        self.assertIsNone(kwargs['rotor_device_id'])
+
 
 @patch('server_core.lifecycle.PluginOrchestrator')
 class StopTests(TestCase):

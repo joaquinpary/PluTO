@@ -71,7 +71,7 @@ def launch(instance):
         success, result = PluginOrchestrator().spawn_plugin(
             plugin_type=instance.plugin_type,
             instance_id=instance.plugin_uuid,
-            station_coordinates=instance.station_coordinates,
+            station_coordinates=instance.rotor.location if instance.rotor_id else None,
             api_token=api_token,
             rotor_device_id=instance.rotor.device_id if instance.rotor_id else None,
             **(instance.config or {}),

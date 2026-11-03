@@ -35,11 +35,6 @@ class PluginInstance(models.Model):
         help_text='The rotor this instance drives while RUNNING. Only one running instance per rotor (RF-31.1).',
     )
 
-    # Ground station position — common to every plugin
-    station_lat = models.FloatField(default=0.0)
-    station_lon = models.FloatField(default=0.0)
-    station_alt = models.FloatField(default=0.0)
-
     # Plugin-specific parameters — arbitrary key/value pairs forwarded to the orchestrator
     config = models.JSONField(
         default=dict,
@@ -70,14 +65,6 @@ class PluginInstance(models.Model):
 
     def __str__(self):
         return self.name
-
-    @property
-    def station_coordinates(self):
-        return {
-            'lat': self.station_lat,
-            'lon': self.station_lon,
-            'alt': self.station_alt,
-        }
 
 class PluginData(models.Model):
     """One row per envelope a plugin sent to POST /api/plugin-data/<type>."""

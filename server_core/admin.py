@@ -36,10 +36,6 @@ class PluginInstanceAdmin(admin.ModelAdmin):
             {'fields': ('name', 'plugin_type')},
         ),
         (
-            'Ground Station',
-            {'fields': ('station_lat', 'station_lon', 'station_alt')},
-        ),
-        (
             'Rotor',
             {
                 'fields': ('rotor',),
@@ -73,10 +69,6 @@ class PluginInstanceAdmin(admin.ModelAdmin):
         (
             None,
             {'fields': ('name', 'plugin_type', 'status', 'runtime_status', 'container_id')},
-        ),
-        (
-            'Ground Station',
-            {'fields': ('station_lat', 'station_lon', 'station_alt')},
         ),
         (
             'Rotor',

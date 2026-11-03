@@ -228,7 +228,6 @@ class CoordinatesUploadTests(TestCase):
 	def form(self, plugin, content=b'40 -3 667\n'):
 		data = {
 			'name': plugin.name, 'plugin_type': plugin.plugin_type, 'status': plugin.status,
-			'station_lat': plugin.station_lat, 'station_lon': plugin.station_lon, 'station_alt': plugin.station_alt,
 			'config': json.dumps(plugin.config),
 		}
 		files = {'coordinates_file': SimpleUploadedFile('coords.txt', content)}
