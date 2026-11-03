@@ -38,6 +38,22 @@ services:
       - pluto-network
       - docker-proxy
 
+
+  # The front end: nginx serves the React build and proxies /api/ to the
+  # server. The only port the LAN needs; the phone gets in through it.
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: pluto/web:latest
+    ports:
+      - "${PLUTO_WEB_PORT:-80}:80"
+    depends_on:
+      - server
+    restart: unless-stopped
+    networks:
+      - pluto-network
+
   # POST /transform for the plugins, inside pluto-network only: no port published.
   coord_transform:
     build:
