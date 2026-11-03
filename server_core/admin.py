@@ -1,11 +1,9 @@
 from django import forms
 from django.contrib import admin, messages
 
-from .api_tokens import issue_token
+from . import lifecycle
 from .models import DispatchOrder, PluginInstance, Rotor, RotorState
-from .mqtt_publish import publish_retained
 from .orchestrator import PluginOrchestrator
-from .plugin_handlers.file_tracker import build_file_message, input_topic
 
 
 class PluginInstanceForm(forms.ModelForm):
@@ -21,31 +19,6 @@ class PluginInstanceForm(forms.ModelForm):
     class Meta:
         model = PluginInstance
         fields = '__all__'
-
-    def clean(self):
-        cleaned_data = super().clean()
-        upload = cleaned_data.get('coordinates_file')
-        if not upload:
-            return cleaned_data
-
-        plugin_type = cleaned_data.get('plugin_type') or self.instance.plugin_type
-        if plugin_type != 'file_tracker':
-            self.add_error('coordinates_file', 'Only file_tracker instances take a coordinates file.')
-            return cleaned_data
-
-        config = cleaned_data.get('config') or {}
-        missing = [key for key in ('coord_type', 'coord_format') if not config.get(key)]
-        if missing:
-            self.add_error('coordinates_file', f'Set {" and ".join(missing)} in the configuration first.')
-            return cleaned_data
-
-        # Built here rather than in save_model so a bad file is a form error
-        # next to the field, not a message after the row was already saved.
-        try:
-            cleaned_data['coordinates_message'] = build_file_message(config, upload.name, upload.read())
-        except ValueError as exc:
-            self.add_error('coordinates_file', str(exc))
-        return cleaned_data
 
 
 @admin.register(PluginInstance)
@@ -143,16 +116,9 @@ class PluginInstanceAdmin(admin.ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         readonly_fields = list(super().get_readonly_fields(request, obj))
         if obj is not None:
-            readonly_fields.append('status')
+            # Changing the type of a running instance orphaned its container.
+            readonly_fields += ['status', 'plugin_type']
         return tuple(readonly_fields)
-
-    @staticmethod
-    def _runtime_status_to_model_status(runtime_status):
-        if runtime_status == 'running':
-            return PluginInstance.Status.RUNNING
-        if runtime_status == 'not_found':
-            return PluginInstance.Status.STOPPED
-        return PluginInstance.Status.ERROR
 
     @admin.display(description='Docker status')
     def runtime_status(self, obj):
@@ -166,207 +132,56 @@ class PluginInstanceAdmin(admin.ModelAdmin):
 
         return runtime_status.replace('_', ' ').title()
 
-    def _start_plugin(self, plugin, orchestrator):
-        # A new token on every launch, so one leaked from an earlier container
-        # stops working as soon as that container is replaced.
-        api_token, api_token_hash = issue_token()
-        success, result = orchestrator.spawn_plugin(
-            plugin_type=plugin.plugin_type,
-            instance_id=plugin.plugin_uuid,
-            station_coordinates=plugin.station_coordinates,
-            api_token=api_token,
-            rotor_device_id=plugin.rotor.device_id if plugin.rotor_id else None,
-            **(plugin.config or {}),
-        )
-
-        if success:
-            plugin.status = PluginInstance.Status.RUNNING
-            plugin.container_id = result
-            plugin.api_token_hash = api_token_hash
-            plugin.save(update_fields=['status', 'container_id', 'api_token_hash', 'updated_at'])
-            return True, result
-
-        plugin.status = PluginInstance.Status.ERROR
-        plugin.container_id = ''
-        plugin.api_token_hash = ''
-        plugin.save(update_fields=['status', 'container_id', 'api_token_hash', 'updated_at'])
-        return False, result
-
-    def _stop_plugin(self, plugin, orchestrator, failed_status=PluginInstance.Status.ERROR):
-        success, result = orchestrator.kill_plugin(plugin.plugin_type, plugin.plugin_uuid)
-
-        if success:
-            plugin.status = PluginInstance.Status.STOPPED
-            plugin.container_id = ''
-            plugin.api_token_hash = ''
-            plugin.save(update_fields=['status', 'container_id', 'api_token_hash', 'updated_at'])
-            return True, result
-
-        plugin.status = failed_status
-        plugin.save(update_fields=['status', 'updated_at'])
-        return False, result
-
-    def _sync_plugin_status(self, plugin, orchestrator):
-        success, runtime_status = orchestrator.get_container_status(plugin.plugin_type, plugin.plugin_uuid)
-        if not success:
-            return False, 'Could not query container status from Docker.'
-
-        mapped_status = self._runtime_status_to_model_status(runtime_status)
-        container_id = plugin.container_id
-
-        api_token_hash = plugin.api_token_hash
-        if runtime_status == 'not_found':
-            # No container left to use the token.
-            container_id = ''
-            api_token_hash = ''
-
-        if (plugin.status, plugin.container_id, plugin.api_token_hash) != (mapped_status, container_id, api_token_hash):
-            plugin.status = mapped_status
-            plugin.container_id = container_id
-            plugin.api_token_hash = api_token_hash
-            plugin.save(update_fields=['status', 'container_id', 'api_token_hash', 'updated_at'])
-
-        return True, runtime_status
-
-    def _send_coordinates_file(self, request, plugin, message):
-        try:
-            publish_retained(input_topic(plugin.plugin_uuid), message)
-        except Exception as exc:
-            self.message_user(request, f'Could not send the coordinates file to {plugin.name}: {exc}', level=messages.ERROR)
-            return
-        self.message_user(request, f'Coordinates file sent to {plugin.name}.', level=messages.SUCCESS)
-
-    def _clear_coordinates_file(self, request, plugin):
-        # Otherwise the file outlives the instance, retained on a topic nobody
-        # will ever read again.
-        if plugin.plugin_type != 'file_tracker':
-            return
-        try:
-            publish_retained(input_topic(plugin.plugin_uuid), b'')
-        except Exception as exc:
-            self.message_user(request, f'Could not clear the coordinates file of {plugin.name}: {exc}', level=messages.WARNING)
-
     def save_model(self, request, obj, form, change):
-        previous_status = None
-        if change:
-            previous_status = PluginInstance.objects.get(pk=obj.pk).status
+        """Saves, and sends the coordinates file if one came with the form.
 
+        Launching and stopping are the actions: status is read-only here.
+        """
         super().save_model(request, obj, form, change)
 
-        # Before the lifecycle, which returns early. The message is retained,
-        # so a plugin launched right below still finds it when it subscribes.
-        message = form.cleaned_data.get('coordinates_message') if form is not None else None
-        if message:
-            self._send_coordinates_file(request, obj, message)
-
-        orchestrator = PluginOrchestrator()
-
+        upload = form.cleaned_data.get('coordinates_file') if form is not None else None
+        if not upload:
+            return
         try:
-            if not change and obj.status == PluginInstance.Status.RUNNING:
-                success, result = self._start_plugin(obj, orchestrator)
-                if not success:
-                    self.message_user(request, f'Failed to launch {obj.name}: {result}', level=messages.ERROR)
-                return
-
-            if previous_status != PluginInstance.Status.RUNNING and obj.status == PluginInstance.Status.RUNNING:
-                success, result = self._start_plugin(obj, orchestrator)
-                if not success:
-                    self.message_user(request, f'Failed to launch {obj.name}: {result}', level=messages.ERROR)
-                return
-
-            if previous_status == PluginInstance.Status.RUNNING and obj.status != PluginInstance.Status.RUNNING:
-                success, result = self._stop_plugin(obj, orchestrator)
-                if not success:
-                    self.message_user(request, f'Failed to stop {obj.name}: {result}', level=messages.ERROR)
-        except Exception as exc:
-            obj.status = PluginInstance.Status.ERROR
-            obj.save(update_fields=['status', 'updated_at'])
-            self.message_user(request, f'Unexpected error while applying plugin lifecycle for {obj.name}: {exc}', level=messages.ERROR)
+            lifecycle.send_coordinates_file(obj, upload)
+        except lifecycle.LifecycleError as exc:
+            self.message_user(request, f'Could not send the coordinates file to {obj.name}: {exc.detail}', level=messages.ERROR)
+        else:
+            self.message_user(request, f'Coordinates file sent to {obj.name}.', level=messages.SUCCESS)
 
     def delete_model(self, request, obj):
-        if obj.status == PluginInstance.Status.RUNNING:
-            orchestrator = PluginOrchestrator()
-            success, result = self._stop_plugin(obj, orchestrator, failed_status=PluginInstance.Status.RUNNING)
-            if not success:
-                self.message_user(request, f'Failed to stop {obj.name}. Deletion was cancelled: {result}', level=messages.ERROR)
-                return
-
-        super().delete_model(request, obj)
-        self._clear_coordinates_file(request, obj)
+        try:
+            lifecycle.delete(obj)
+        except lifecycle.LifecycleError as exc:
+            self.message_user(request, f'{obj.name} was not deleted: {exc.detail}', level=messages.ERROR)
 
     def delete_queryset(self, request, queryset):
-        orchestrator = PluginOrchestrator()
-        deletable_ids = []
-
         for plugin in queryset:
-            if plugin.status == PluginInstance.Status.RUNNING:
-                success, result = self._stop_plugin(plugin, orchestrator, failed_status=PluginInstance.Status.RUNNING)
-                if not success:
-                    self.message_user(request, f'Failed to stop {plugin.name}. Deletion was cancelled: {result}', level=messages.ERROR)
-                    continue
+            self.delete_model(request, plugin)
 
-            deletable_ids.append(plugin.pk)
-
-        if deletable_ids:
-            deletable = PluginInstance.objects.filter(pk__in=deletable_ids)
-            deleted = list(deletable)
-            super().delete_queryset(request, deletable)
-            for plugin in deleted:
-                self._clear_coordinates_file(request, plugin)
+    def _run(self, request, queryset, step, verb):
+        done = 0
+        for plugin in queryset:
+            try:
+                step(plugin)
+            except lifecycle.LifecycleError as exc:
+                self.message_user(request, f'Could not {verb} {plugin.name}: {exc.detail}', level=messages.ERROR)
+            else:
+                done += 1
+        if done:
+            self.message_user(request, f'{verb.capitalize()}: {done} plugin(s).', level=messages.SUCCESS)
 
     @admin.action(description='Launch selected plugins')
     def launch_selected_plugins(self, request, queryset):
-        orchestrator = PluginOrchestrator()
-        launched = 0
-
-        for plugin in queryset:
-            if plugin.status == PluginInstance.Status.RUNNING:
-                self.message_user(request, f'{plugin.name} is already running.', level=messages.WARNING)
-                continue
-
-            success, result = self._start_plugin(plugin, orchestrator)
-            if success:
-                launched += 1
-            else:
-                self.message_user(request, f'Failed to launch {plugin.name}: {result}', level=messages.ERROR)
-
-        if launched:
-            self.message_user(request, f'Launched {launched} plugin(s).', level=messages.SUCCESS)
+        self._run(request, queryset, lifecycle.launch, 'launch')
 
     @admin.action(description='Stop selected plugins')
     def stop_selected_plugins(self, request, queryset):
-        orchestrator = PluginOrchestrator()
-        stopped = 0
-
-        for plugin in queryset:
-            if plugin.status != PluginInstance.Status.RUNNING:
-                self.message_user(request, f'{plugin.name} is not running.', level=messages.WARNING)
-                continue
-
-            success, result = self._stop_plugin(plugin, orchestrator)
-            if success:
-                stopped += 1
-            else:
-                self.message_user(request, f'Failed to stop {plugin.name}: {result}', level=messages.ERROR)
-
-        if stopped:
-            self.message_user(request, f'Stopped {stopped} plugin(s).', level=messages.SUCCESS)
+        self._run(request, queryset, lifecycle.stop, 'stop')
 
     @admin.action(description='Sync selected plugin statuses from Docker')
     def sync_container_statuses(self, request, queryset):
-        orchestrator = PluginOrchestrator()
-        synced = 0
-
-        for plugin in queryset:
-            success, result = self._sync_plugin_status(plugin, orchestrator)
-            if success:
-                synced += 1
-            else:
-                self.message_user(request, f'Failed to sync {plugin.name}: {result}', level=messages.ERROR)
-
-        if synced:
-            self.message_user(request, f'Synced {synced} plugin status value(s).', level=messages.SUCCESS)
-
+        self._run(request, queryset, lifecycle.sync, 'sync')
 
 @admin.register(Rotor)
 class RotorAdmin(admin.ModelAdmin):

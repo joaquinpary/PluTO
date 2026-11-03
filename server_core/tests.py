@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from django.contrib.admin import AdminSite
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -8,13 +8,15 @@ from django.db.models import ProtectedError
 from django.test import RequestFactory, SimpleTestCase, TestCase
 
 from .admin import PluginInstanceAdmin, PluginInstanceForm
-from .api_tokens import hash_token
-from .models import PluginData, PluginInstance, Rotor
+from .lifecycle import LifecycleError
+from .models import PluginData, PluginInstance
 from .plugin_handlers import PLUGIN_HANDLERS
 from .plugin_handlers.file_tracker import MAX_FILE_BYTES, build_file_message
 
 
 class PluginInstanceAdminTests(TestCase):
+	"""The admin only delegates now; test_lifecycle.py covers what it delegates to."""
+
 	def setUp(self):
 		self.factory = RequestFactory()
 		self.admin_site = AdminSite()
@@ -28,33 +30,41 @@ class PluginInstanceAdminTests(TestCase):
 		self.assertEqual(first_fields, ('name', 'plugin_type'))
 		self.assertNotIn('status', first_fields)
 
-	def test_change_form_marks_status_as_readonly(self):
+	def test_change_form_marks_status_and_type_as_readonly(self):
 		plugin = PluginInstance.objects.create(name='tracker-0', plugin_type='file_tracker')
 
 		readonly_fields = self.model_admin.get_readonly_fields(self.request, plugin)
 
 		self.assertIn('status', readonly_fields)
+		# Changing the type of a running instance orphaned its container.
+		self.assertIn('plugin_type', readonly_fields)
 
-	def test_save_model_starts_new_running_plugin(self):
-		plugin = PluginInstance(
-			name='tracker-1',
-			plugin_type='file_tracker',
-			status=PluginInstance.Status.RUNNING,
-			config={
-				'coord_type': 'ECEF',
-				'coord_format': 'GEO',
-			},
-		)
-		request = self.factory.post('/admin/server_core/plugininstance/add/')
+	def test_the_actions_go_through_the_lifecycle(self):
+		plugin = PluginInstance.objects.create(name='tinygs-1', plugin_type='tinygs')
+		request = self.factory.post('/admin/server_core/plugininstance/')
+		actions = {
+			'launch': self.model_admin.launch_selected_plugins,
+			'stop': self.model_admin.stop_selected_plugins,
+			'sync': self.model_admin.sync_container_statuses,
+		}
 
-		with patch('server_core.admin.PluginOrchestrator') as orchestrator_cls:
-			orchestrator_cls.return_value.spawn_plugin.return_value = (True, 'container-123')
+		for step, action in actions.items():
+			with self.subTest(step=step):
+				with patch(f'server_core.lifecycle.{step}') as lifecycle_step, patch.object(self.model_admin, 'message_user'):
+					action(request, PluginInstance.objects.all())
+				lifecycle_step.assert_called_once_with(plugin)
 
-			self.model_admin.save_model(request, plugin, form=None, change=False)
+	def test_a_failed_step_is_reported_and_the_rest_go_on(self):
+		PluginInstance.objects.create(name='a', plugin_type='tinygs')
+		PluginInstance.objects.create(name='b', plugin_type='tinygs')
+		request = self.factory.post('/admin/server_core/plugininstance/')
 
-		plugin.refresh_from_db()
-		self.assertEqual(plugin.status, PluginInstance.Status.RUNNING)
-		self.assertEqual(plugin.container_id, 'container-123')
+		with patch('server_core.lifecycle.launch', side_effect=[LifecycleError('docker', 'boom'), None]) as launch, \
+				patch.object(self.model_admin, 'message_user') as message_user:
+			self.model_admin.launch_selected_plugins(request, PluginInstance.objects.all())
+
+		self.assertEqual(launch.call_count, 2)
+		self.assertIn('boom', message_user.call_args_list[0].args[1])
 
 	def test_delete_model_cancels_deletion_when_stop_fails(self):
 		plugin = PluginInstance.objects.create(
@@ -64,12 +74,12 @@ class PluginInstanceAdminTests(TestCase):
 		)
 		request = self.factory.post(f'/admin/server_core/plugininstance/{plugin.pk}/delete/')
 
-		with patch.object(self.model_admin, '_stop_plugin', return_value=(False, 'boom')) as stop_plugin:
-			with patch.object(self.model_admin, 'message_user') as message_user:
-				self.model_admin.delete_model(request, plugin)
+		with patch('server_core.lifecycle.PluginOrchestrator') as orchestrator_cls, \
+				patch.object(self.model_admin, 'message_user') as message_user:
+			orchestrator_cls.return_value.kill_plugin.return_value = (False, 'boom')
+			self.model_admin.delete_model(request, plugin)
 
 		self.assertTrue(PluginInstance.objects.filter(pk=plugin.pk).exists())
-		stop_plugin.assert_called_once()
 		message_user.assert_called_once()
 
 	def test_delete_model_stops_running_plugin_before_deleting(self):
@@ -80,63 +90,13 @@ class PluginInstanceAdminTests(TestCase):
 		)
 		request = self.factory.post(f'/admin/server_core/plugininstance/{plugin.pk}/delete/')
 
-		with patch.object(self.model_admin, '_stop_plugin', return_value=(True, 'stopped')) as stop_plugin, \
-				patch('server_core.admin.publish_retained'):
+		with patch('server_core.lifecycle.PluginOrchestrator') as orchestrator_cls, \
+				patch('server_core.lifecycle.publish_retained'):
+			orchestrator_cls.return_value.kill_plugin.return_value = (True, 'stopped')
 			self.model_admin.delete_model(request, plugin)
 
 		self.assertFalse(PluginInstance.objects.filter(pk=plugin.pk).exists())
-		stop_plugin.assert_called_once()
-
-	def test_launch_hands_the_container_a_token_and_its_board(self):
-		rotor = Rotor.objects.create(device_id='a1b2c3d4e5f6')
-		plugin = PluginInstance.objects.create(name='tinygs-1', plugin_type='tinygs', rotor=rotor)
-		orchestrator = MagicMock()
-		orchestrator.spawn_plugin.return_value = (True, 'container-123')
-
-		self.model_admin._start_plugin(plugin, orchestrator)
-
-		kwargs = orchestrator.spawn_plugin.call_args.kwargs
-		self.assertEqual(kwargs['rotor_device_id'], 'a1b2c3d4e5f6')
-		plugin.refresh_from_db()
-		# Only the hash is kept, and it is the hash of what the container got.
-		self.assertEqual(plugin.api_token_hash, hash_token(kwargs['api_token']))
-
-	def test_a_failed_launch_leaves_no_token(self):
-		plugin = PluginInstance.objects.create(name='tinygs-2', plugin_type='tinygs', api_token_hash='stale')
-		orchestrator = MagicMock()
-		orchestrator.spawn_plugin.return_value = (False, 'boom')
-
-		self.model_admin._start_plugin(plugin, orchestrator)
-
-		plugin.refresh_from_db()
-		self.assertEqual(plugin.api_token_hash, '')
-		self.assertIsNone(orchestrator.spawn_plugin.call_args.kwargs['rotor_device_id'])
-
-	def test_stopping_revokes_the_token(self):
-		plugin = PluginInstance.objects.create(
-			name='tinygs-3', plugin_type='tinygs',
-			status=PluginInstance.Status.RUNNING, api_token_hash='a' * 64,
-		)
-		orchestrator = MagicMock()
-		orchestrator.kill_plugin.return_value = (True, 'stopped')
-
-		self.model_admin._stop_plugin(plugin, orchestrator)
-
-		plugin.refresh_from_db()
-		self.assertEqual(plugin.api_token_hash, '')
-
-	def test_sync_revokes_the_token_of_a_vanished_container(self):
-		plugin = PluginInstance.objects.create(
-			name='tinygs-4', plugin_type='tinygs',
-			status=PluginInstance.Status.RUNNING, api_token_hash='a' * 64,
-		)
-		orchestrator = MagicMock()
-		orchestrator.get_container_status.return_value = (True, 'not_found')
-
-		self.model_admin._sync_plugin_status(plugin, orchestrator)
-
-		plugin.refresh_from_db()
-		self.assertEqual((plugin.status, plugin.api_token_hash), (PluginInstance.Status.STOPPED, ''))
+		orchestrator_cls.return_value.kill_plugin.assert_called_once_with('file_tracker', plugin.plugin_uuid)
 
 
 class TinyGSHandlerTests(SimpleTestCase):
@@ -283,29 +243,26 @@ class CoordinatesUploadTests(TestCase):
 		form = self.form(self.plugin)
 		self.assertTrue(form.is_valid(), form.errors)
 
-		with patch('server_core.admin.publish_retained') as publish, patch('server_core.admin.PluginOrchestrator'):
+		with patch('server_core.lifecycle.publish_retained') as publish:
 			self.model_admin.save_model(self.request(), form.save(commit=False), form, change=True)
 
 		topic, payload = publish.call_args.args
 		self.assertEqual(topic, f'plugin/{self.plugin.plugin_uuid}/input/file')
 		self.assertEqual(json.loads(payload)['content'], '40 -3 667\n')
 
-	def test_a_file_for_another_plugin_type_is_a_form_error(self):
-		plugin = PluginInstance.objects.create(name='gs', plugin_type='tinygs', config={'tinygs_device': 'My_TinyGS'})
-
-		form = self.form(plugin)
-
-		self.assertFalse(form.is_valid())
-		self.assertIn('coordinates_file', form.errors)
-
-	def test_a_binary_file_is_a_form_error(self):
+	def test_a_bad_file_is_reported_and_not_sent(self):
 		form = self.form(self.plugin, content=b'\xff\xfe\x00')
+		self.assertTrue(form.is_valid(), form.errors)
+		request = self.request()
 
-		self.assertFalse(form.is_valid())
-		self.assertIn('coordinates_file', form.errors)
+		with patch('server_core.lifecycle.publish_retained') as publish:
+			self.model_admin.save_model(request, form.save(commit=False), form, change=True)
+
+		publish.assert_not_called()
+		self.assertIn('not UTF-8', request._messages[0])
 
 	def test_deleting_the_instance_clears_the_retained_file(self):
-		with patch('server_core.admin.publish_retained') as publish:
+		with patch('server_core.lifecycle.publish_retained') as publish:
 			self.model_admin.delete_model(self.request(), self.plugin)
 
 		publish.assert_called_once_with(f'plugin/{self.plugin.plugin_uuid}/input/file', b'')
