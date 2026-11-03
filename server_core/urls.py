@@ -2,7 +2,7 @@ from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
-from . import api, api_account, api_plugins
+from . import api, api_account, api_boards, api_plugins
 
 urlpatterns = [
     # Plugin containers, with Plugin <token>.
@@ -22,6 +22,10 @@ urlpatterns = [
     # The front end, with Bearer <jwt>.
     path('boards', api.BoardsView.as_view(), name='api-boards'),
     path('boards/scan', api.BoardScanView.as_view(), name='api-boards-scan'),
+    # Before <device_id>, which would take "live" for a board.
+    path('boards/live', api_boards.BoardsLiveView.as_view(), name='api-boards-live'),
+    path('boards/<str:device_id>', api_boards.BoardDetailView.as_view(), name='api-board'),
+    path('boards/<str:device_id>/track', api_boards.BoardTrackView.as_view(), name='api-board-track'),
     path('plugin-types', api_plugins.PluginTypesView.as_view(), name='api-plugin-types'),
     path('plugins', api_plugins.PluginsView.as_view(), name='api-plugins'),
     path('plugins/<uuid:plugin_uuid>', api_plugins.PluginDetailView.as_view(), name='api-plugin'),

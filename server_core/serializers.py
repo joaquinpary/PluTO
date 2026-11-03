@@ -4,14 +4,17 @@ The envelope serializers only describe the payload for the OpenAPI schema: the
 envelope is deliberately tolerant, and ingest.envelope_fields is what decides
 which of its keys reach a row.
 """
+import copy
+
 from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.validators import UnicodeUsernameValidator
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError as DjangoValidationError
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
+from rest_framework.settings import api_settings
 
-from .device_state import DEVICE_ID_RE
-from .models import DispatchOrder, PluginInstance, Rotor
+from .device_state import DEVICE_ID_RE, measured_position, tracking_error
+from .models import DispatchOrder, PluginInstance, Rotor, RotorState
 from .plugin_handlers import PLUGIN_HANDLERS, get_handler
 from .plugin_handlers.fields import apply_defaults, config_errors
 
@@ -53,7 +56,28 @@ class BoardSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Rotor
-        fields = ['device_id', 'name', 'online', 'status_changed_at', 'last_state_at', 'plugins']
+        fields = [
+            'device_id', 'name', 'online', 'status_changed_at', 'last_state_at',
+            'latitude_deg', 'longitude_deg', 'altitude_m',
+            'min_elevation_deg', 'min_azimuth_deg', 'max_azimuth_deg', 'plugins',
+        ]
+        # What the board reports about itself is not for the user to edit.
+        read_only_fields = ['device_id', 'online', 'status_changed_at', 'last_state_at']
+
+    def validate(self, attrs):
+        # Rotor.clean() on the board as it would be saved, so a PATCH of one end
+        # of the azimuth window is checked against the other end already stored.
+        rotor = copy.copy(self.instance)
+        for name, value in attrs.items():
+            setattr(rotor, name, value)
+        try:
+            rotor.full_clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({
+                api_settings.NON_FIELD_ERRORS_KEY if field == NON_FIELD_ERRORS else field: messages
+                for field, messages in exc.message_dict.items()
+            })
+        return attrs
 
 
 class BindBoardSerializer(serializers.Serializer):
@@ -292,3 +316,70 @@ class LogsQuerySerializer(serializers.Serializer):
 class LogsSerializer(serializers.Serializer):
     source = serializers.CharField(help_text='The plugin instance or the service the lines come from.')
     lines = serializers.ListField(child=serializers.CharField(allow_blank=True))
+
+
+# --- Boards, live --------------------------------------------------------------
+
+class MeasSerializer(serializers.Serializer):
+    az_cdeg = serializers.IntegerField()
+    el_cdeg = serializers.IntegerField()
+
+
+class LiveStateSerializer(serializers.ModelSerializer):
+    meas = serializers.SerializerMethodField(help_text='Measured by the encoders; null without them.')
+    err_cdeg = serializers.SerializerMethodField(help_text='Tracking error the board measured; null without encoders.')
+
+    class Meta:
+        model = RotorState
+        fields = [
+            'received_at', 'mode', 'az_cdeg', 'el_cdeg', 'pan_mode', 'batch_accepted', 'batch_error',
+            'clock_synced', 'rejected_total', 'meas', 'err_cdeg',
+        ]
+        read_only_fields = fields
+
+    @extend_schema_field(MeasSerializer(allow_null=True))
+    def get_meas(self, state):
+        return measured_position(state.payload)
+
+    @extend_schema_field(serializers.IntegerField(allow_null=True))
+    def get_err_cdeg(self, state):
+        return tracking_error(state.payload)
+
+
+class RunningPluginSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PluginInstance
+        fields = ['plugin_uuid', 'name', 'plugin_type']
+        read_only_fields = fields
+
+
+class SatelliteSerializer(serializers.Serializer):
+    name = serializers.CharField(allow_null=True)
+    norad = serializers.IntegerField(allow_null=True)
+
+
+class BoardLiveSerializer(serializers.ModelSerializer):
+    """A board as the home page polls it. api_boards.BoardsLiveView sets the attributes it reads."""
+    state = LiveStateSerializer(source='live_state', allow_null=True, read_only=True)
+    running_plugin = RunningPluginSerializer(allow_null=True, read_only=True)
+    satellite = SatelliteSerializer(allow_null=True, read_only=True)
+    last_hold_reason = serializers.ChoiceField(choices=DispatchOrder.Reason.choices, allow_null=True, read_only=True)
+
+    class Meta:
+        model = Rotor
+        fields = [
+            'device_id', 'name', 'online', 'status_changed_at', 'last_state_at',
+            'state', 'running_plugin', 'satellite', 'last_hold_reason',
+        ]
+        read_only_fields = fields
+
+
+class TrackPointSerializer(serializers.Serializer):
+    t_ms = serializers.IntegerField(help_text='When the antenna should be there: epoch milliseconds, UTC.')
+    az_cdeg = serializers.IntegerField()
+    el_cdeg = serializers.IntegerField()
+
+
+class TrackSerializer(serializers.Serializer):
+    device_id = serializers.CharField()
+    points = TrackPointSerializer(many=True)

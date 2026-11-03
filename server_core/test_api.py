@@ -330,7 +330,11 @@ class BoardsTests(FrontTestCase):
         Rotor.objects.create(device_id=OTHER_DEVICE_ID)
 
         boards = self.client.get('/api/boards').json()
-        self.assertEqual(set(boards[0]), {'device_id', 'name', 'online', 'status_changed_at', 'last_state_at', 'plugins'})
+        self.assertEqual(set(boards[0]), {
+            'device_id', 'name', 'online', 'status_changed_at', 'last_state_at',
+            'latitude_deg', 'longitude_deg', 'altitude_m',
+            'min_elevation_deg', 'min_azimuth_deg', 'max_azimuth_deg', 'plugins',
+        })
 
         self.assertEqual([board['device_id'] for board in boards], [OTHER_DEVICE_ID, DEVICE_ID])
         self.assertEqual(boards[1]['online'], True)

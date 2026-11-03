@@ -116,3 +116,24 @@ def store_state(device_id, payload):
     )
     Rotor.objects.filter(pk=rotor.pk).update(last_state_at=Now())
     return True
+
+
+def measured_position(document):
+    """meas of a state document as {'az_cdeg', 'el_cdeg'}, or None.
+
+    Only a board with encoders sends it (KAN-22, the B5 draft of
+    device-state.md); anything malformed reads as no measurement, the same as
+    a document from an older firmware.
+    """
+    meas = document.get('meas') if isinstance(document, dict) else None
+    if not isinstance(meas, dict):
+        return None
+    az_cdeg, el_cdeg = _int(meas.get('az_cdeg')), _int(meas.get('el_cdeg'))
+    if az_cdeg is None or el_cdeg is None:
+        return None
+    return {'az_cdeg': az_cdeg, 'el_cdeg': el_cdeg}
+
+
+def tracking_error(document):
+    """err_cdeg of a state document, or None when the board measured none."""
+    return _int(document.get('err_cdeg')) if isinstance(document, dict) else None

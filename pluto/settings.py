@@ -198,4 +198,6 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Plugin ingestion and board binding. The prose contract is docs/contracts/ingest-api.md.',
     'VERSION': '1',
     'SERVE_INCLUDE_SCHEMA': False,
+    # The live boards, the orders and the history share DispatchOrder.Reason: one name for all.
+    'ENUM_NAME_OVERRIDES': {'HoldReasonEnum': 'server_core.models.DispatchOrder.Reason'},
 }

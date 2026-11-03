@@ -44,3 +44,28 @@ class TinyGSHandler(BasePluginHandler):
             help="Cada cuánto se vuelven a pedir los elementos orbitales a CelesTrak.",
         ),
     )
+
+
+# What the station reports before the TinyGS server assigns it a satellite
+# (plugins/tinygs/tracker.py): a placeholder, not something it follows.
+_UNASSIGNED_SATELLITE = "Waiting"
+
+
+def satellite_from_tracking(payload):
+    """The satellite a tracking payload names, as {"name", "norad"}, or None.
+
+    The payload is whatever the station sent, so a missing or odd field just
+    leaves that part empty instead of failing the caller.
+    """
+    if not isinstance(payload, dict) or payload.get("satellite") == _UNASSIGNED_SATELLITE:
+        return None
+
+    name = payload.get("satellite")
+    norad = payload.get("NORAD")
+    name = name if isinstance(name, str) and name else None
+    # bool is an int in Python, and True is not a catalog number.
+    norad = norad if isinstance(norad, int) and not isinstance(norad, bool) and norad > 0 else None
+
+    if name is None and norad is None:
+        return None
+    return {"name": name, "norad": norad}
