@@ -7,8 +7,10 @@ into a response.
 """
 import logging
 
+from django.db import transaction
+
 from .api_tokens import issue_token
-from .models import PluginInstance
+from .models import PluginInstance, Rotor
 from .mqtt_publish import publish_retained
 from .orchestrator import PluginOrchestrator
 from .plugin_handlers import get_handler
@@ -56,19 +58,31 @@ def launch(instance):
     if errors:
         raise LifecycleError('invalid_config', 'The configuration is not valid. Fix it and save it before launching.', fields=errors)
 
-    if instance.rotor_id:
-        # RF-31.1: one running instance drives a board at a time.
-        driver = (
-            PluginInstance.objects.filter(rotor_id=instance.rotor_id, status=RUNNING)
-            .exclude(pk=instance.pk)
-            .first()
-        )
-        if driver is not None:
-            raise LifecycleError('board_busy', f'{driver.name} already drives {instance.rotor} (RF-31.1).')
-
     # A new token on every launch, so one leaked from an earlier container
     # stops working as soon as that container is replaced.
     api_token, api_token_hash = issue_token()
+
+    # Claim the instance (and its board) before building, which can take
+    # minutes: a second launch from another tab or the phone must find it
+    # RUNNING instead of starting a clashing container and wiping the token.
+    with transaction.atomic():
+        if instance.rotor_id:
+            # Serialises launches on one board, so RF-31.1 holds for two instances too.
+            Rotor.objects.select_for_update().filter(pk=instance.rotor_id).first()
+            # RF-31.1: one running instance drives a board at a time.
+            driver = (
+                PluginInstance.objects.filter(rotor_id=instance.rotor_id, status=RUNNING)
+                .exclude(pk=instance.pk)
+                .first()
+            )
+            if driver is not None:
+                raise LifecycleError('board_busy', f'{driver.name} already drives {instance.rotor} (RF-31.1).')
+        claimed = PluginInstance.objects.filter(pk=instance.pk, status__in=[STOPPED, ERROR]).update(
+            status=RUNNING, container_id='', api_token_hash=api_token_hash,
+        )
+        if not claimed:
+            raise LifecycleError('already_running', f'{instance.name} is already running.')
+
     try:
         success, result = PluginOrchestrator().spawn_plugin(
             plugin_type=instance.plugin_type,

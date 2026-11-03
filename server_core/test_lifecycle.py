@@ -132,6 +132,47 @@ class LaunchTests(TestCase):
         self.plugin.refresh_from_db()
         self.assertEqual(self.plugin.status, RUNNING)
 
+    def test_a_second_launch_during_the_build_is_refused_and_keeps_the_token(self, orchestrator_cls):
+        # The image build can take minutes; another tab or the phone may press Launch meanwhile.
+        second = {}
+
+        def spawn(**kwargs):
+            with self.assertRaises(LifecycleError) as raised:
+                launch(PluginInstance.objects.get(pk=self.plugin.pk))
+            second['code'] = raised.exception.code
+            return True, 'container-123'
+
+        orchestrator_cls.return_value.spawn_plugin.side_effect = spawn
+
+        launch(self.plugin)
+
+        self.assertEqual(second['code'], 'already_running')
+        self.assertEqual(orchestrator_cls.return_value.spawn_plugin.call_count, 1)
+        self.plugin.refresh_from_db()
+        self.assertEqual((self.plugin.status, self.plugin.container_id), (RUNNING, 'container-123'))
+        self.assertEqual(self.plugin.api_token_hash, hash_token(self.spawned(orchestrator_cls)['api_token']))
+
+    def test_another_instance_of_the_board_cannot_launch_during_the_build(self, orchestrator_cls):
+        other = PluginInstance.objects.create(
+            name='tinygs-2', plugin_type='tinygs', rotor=self.rotor, config={'tinygs_device': 'Other_TinyGS'},
+        )
+        second = {}
+
+        def spawn(**kwargs):
+            if kwargs['instance_id'] == self.plugin.plugin_uuid:
+                with self.assertRaises(LifecycleError) as raised:
+                    launch(other)
+                second['code'] = raised.exception.code
+            return True, 'container-123'
+
+        orchestrator_cls.return_value.spawn_plugin.side_effect = spawn
+
+        launch(self.plugin)
+
+        self.assertEqual(second['code'], 'board_busy')
+        other.refresh_from_db()
+        self.assertEqual(other.status, STOPPED)
+
     def test_launches_the_stored_type(self, orchestrator_cls):
         orchestrator_cls.return_value.spawn_plugin.return_value = (True, 'container-123')
         self.plugin.plugin_type = 'file_tracker'  # edited, never saved
