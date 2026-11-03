@@ -1,10 +1,12 @@
 import json
 from datetime import datetime, timezone
+from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -622,3 +624,18 @@ class SchemaTests(TestCase):
     def test_the_openapi_schema_and_its_ui_are_served(self):
         self.assertEqual(self.client.get('/api/schema').status_code, 200)
         self.assertEqual(self.client.get('/api/docs').status_code, 200)
+
+
+class NoAdminTests(TestCase):
+    def test_the_admin_and_the_old_healthcheck_are_gone(self):
+        self.assertNotIn('django.contrib.admin', settings.INSTALLED_APPS)
+        self.assertEqual(self.client.get('/admin/').status_code, 404)
+        # The healthcheck lives at /api/health now.
+        self.assertEqual(self.client.get('/').status_code, 404)
+
+    def test_createsuperuser_is_still_there_as_plan_b(self):
+        with patch.dict('os.environ', {'DJANGO_SUPERUSER_PASSWORD': 'a-long-rescue-password-42'}):
+            call_command('createsuperuser', interactive=False, username='rescue',
+                         email='rescue@example.com', stdout=StringIO())
+
+        self.assertTrue(get_user_model().objects.get(username='rescue').is_superuser)
