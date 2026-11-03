@@ -18,6 +18,10 @@ def iso(moment):
     return moment.isoformat().replace('+00:00', 'Z')
 
 
+# Exporting asks for a range of at most a week (CSV_MAX_RANGE).
+CSV_RANGE = {'format': 'csv', 'from': iso(at(0)), 'to': iso(at(DAY))}
+
+
 def one_state_per_second(rotor, seconds):
     RotorState.objects.bulk_create(
         RotorState(rotor=rotor, received_at=at(second), mode='tracking', az_cdeg=second % 36000, el_cdeg=4500)
@@ -76,7 +80,7 @@ class BoardStatesTests(FrontTestCase):
     def test_csv_has_every_row_of_the_range_oldest_first(self):
         one_state_per_second(self.rotor, 150)
 
-        response = self.client.get(self.url, {'format': 'csv'})
+        response = self.client.get(self.url, CSV_RANGE)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'text/csv; charset=utf-8')
@@ -189,7 +193,7 @@ class DispatchOrdersTests(FrontTestCase):
     def test_csv(self):
         self.order(self.rotor, 0)
 
-        response = self.client.get('/api/orders', {'format': 'csv'})
+        response = self.client.get('/api/orders', CSV_RANGE)
 
         lines = response.content.decode().splitlines()
         self.assertEqual(lines[0], 'id,board,plugin,kind,reason,t0_ms,t_end_ms,t_sent_ms,point_count,created_at')
@@ -274,7 +278,7 @@ class PluginDataHistoryTests(FrontTestCase):
     def test_csv_writes_nested_values_as_json(self):
         self.row({'rssi': -112, 'satellite': 'NOAA 19'})
 
-        lines = self.client.get('/api/plugin-data', {'format': 'csv'}).content.decode().splitlines()
+        lines = self.client.get('/api/plugin-data', CSV_RANGE).content.decode().splitlines()
 
         self.assertEqual(
             lines[0],
@@ -294,3 +298,29 @@ class HistoryAuthTests(FrontTestCase):
                     '/api/orders', '/api/plugin-data'):
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 401)
+
+
+class CsvRangeTests(FrontTestCase):
+    """A CSV is built whole before it is sent: an open or months-long range would
+    outlast nginx's 600 s and hold the rows in memory, so exports ask for a week at most."""
+
+    def test_an_export_needs_both_ends_of_the_range(self):
+        Rotor.objects.create(device_id=DEVICE_ID)
+        for url in (f'/api/boards/{DEVICE_ID}/states', '/api/orders', '/api/plugin-data'):
+            for query in ({'format': 'csv'}, {'format': 'csv', 'from': iso(at(0))}):
+                with self.subTest(url=url, query=query):
+                    response = self.client.get(url, query)
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn('detail', response.json())
+
+    def test_an_export_covers_a_week_at_most(self):
+        week = {'format': 'csv', 'from': iso(at(0)), 'to': iso(at(7 * DAY))}
+        longer = {'format': 'csv', 'from': iso(at(0)), 'to': iso(at(7 * DAY + 1))}
+
+        self.assertEqual(self.client.get('/api/orders', week).status_code, 200)
+        response = self.client.get('/api/orders', longer)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('7 days', response.json()['detail'])
+
+    def test_the_tables_still_page_without_a_range(self):
+        self.assertEqual(self.client.get('/api/orders').status_code, 200)

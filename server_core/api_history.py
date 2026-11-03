@@ -1,6 +1,8 @@
 """The history the front end browses and exports (spec §4.4): what the boards
 reported, what the plugins sent them and produced, and the results
 computed from them."""
+from datetime import timedelta
+
 from django.db.models import Count, F, Max, Min
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.exceptions import NotFound
@@ -43,6 +45,12 @@ def _query(serializer_class, request):
     return query.validated_data
 
 
+# CSVRenderer builds the whole file before sending it (about 3 600 rows/s):
+# a week of states at one per second takes a few minutes, well inside nginx's 600 s.
+# shortcut: a cap instead of streaming; values() + StreamingHttpResponse if longer exports are needed.
+CSV_MAX_RANGE = timedelta(days=7)
+
+
 class HistoryListView(ListAPIView):
     """A history table: newest first with a cursor per page or, with
     ?format=csv, every row of the range, oldest first."""
@@ -72,6 +80,12 @@ class HistoryListView(ListAPIView):
     def list(self, request, *args, **kwargs):
         if request.accepted_renderer.format != 'csv':
             return super().list(request, *args, **kwargs)
+
+        params = _query(self.query_serializer, request)
+        if 'from' not in params or 'to' not in params or params['to'] - params['from'] > CSV_MAX_RANGE:
+            # As JSON, not CSV, so the front shows the detail.
+            request.accepted_renderer, request.accepted_media_type = JSONRenderer(), 'application/json'
+            return Response({'detail': 'Exporting needs from and to, at most 7 days apart.'}, status=400)
 
         rows = self.get_queryset().order_by(self.time_field, 'pk').iterator(chunk_size=2000)
         # A generator over .iterator(): the rows of a long range are never all

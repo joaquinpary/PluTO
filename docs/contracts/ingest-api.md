@@ -323,6 +323,8 @@ sin mensajes nuevos, con un máximo de 2 s.
 - **CSV.** `?format=csv` devuelve las mismas filas como CSV, pero **todas las del rango**,
   de la más vieja a la más nueva, sin paginar y como descarga (`Content-Disposition:
   attachment`). Un valor anidado (el `payload`) va como JSON dentro de su celda.
+  Pide `from` y `to`, con 7 días como máximo (`400` con `detail` si no): el archivo se
+  arma entero antes de mandarlo, y una semana a un estado por segundo tarda unos minutos.
 - **Columnas sacadas del payload.** `err_cdeg` en los estados, y `rssi`, `snr`,
   `crc_error` y `satellite` en los datos de plugins, con los nombres que manda el fork de
   tinyGS. `satellite` es `{"name", "norad"}`, como en `GET /api/boards/live`. Si el payload
