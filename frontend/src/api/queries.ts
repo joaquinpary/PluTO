@@ -319,3 +319,12 @@ export function useReception(plugin: string, range: RangeQuery) {
     enabled: plugin !== '' && hasRange(range),
   });
 }
+
+// --- Account (Task 19) -----------------------------------------------------------
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: async (body: { current_password: string; new_password: string }) =>
+      unwrap(await api.POST('/api/auth/password', { body })),
+  });
+}
