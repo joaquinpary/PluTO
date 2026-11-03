@@ -91,7 +91,8 @@ class BindBoardSerializer(serializers.Serializer):
 
 
 class PluginBoardSerializer(serializers.ModelSerializer):
-    board = serializers.SlugRelatedField(source='rotor', slug_field='device_id', read_only=True)
+    # allow_null only tells the schema the truth: an unbound instance answers null.
+    board = serializers.SlugRelatedField(source='rotor', slug_field='device_id', read_only=True, allow_null=True)
 
     class Meta:
         model = PluginInstance

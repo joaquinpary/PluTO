@@ -199,4 +199,7 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
     # The live boards, the orders and the history share DispatchOrder.Reason: one name for all.
     'ENUM_NAME_OVERRIDES': {'HoldReasonEnum': 'server_core.models.DispatchOrder.Reason'},
+    # A request body gets its own component without the read-only fields, so
+    # the front's generated types do not ask for what the server answers.
+    'COMPONENT_SPLIT_REQUEST': True,
 }

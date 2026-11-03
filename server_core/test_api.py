@@ -625,6 +625,21 @@ class SchemaTests(TestCase):
         self.assertEqual(self.client.get('/api/schema').status_code, 200)
         self.assertEqual(self.client.get('/api/docs').status_code, 200)
 
+    def schema_components(self):
+        return self.client.get('/api/schema', {'format': 'json'}).json()['components']['schemas']
+
+    def test_request_bodies_leave_out_the_read_only_fields(self):
+        # frontend/src/api/schema.d.ts is generated from this schema. With one
+        # component for both directions, logging in would have to send the
+        # access and refresh tokens it is asking for.
+        login = self.schema_components()['TokenObtainPairRequest']
+        self.assertEqual(sorted(login['required']), ['password', 'username'])
+
+    def test_an_unbound_board_is_null_in_the_schema(self):
+        board = self.schema_components()['PluginBoard']['properties']['board']
+        self.assertIs(board['nullable'], True)
+
+
 
 class NoAdminTests(TestCase):
     def test_the_admin_and_the_old_healthcheck_are_gone(self):
