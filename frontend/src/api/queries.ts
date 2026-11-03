@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, unwrap } from './client';
+import { setTokens } from './tokens';
 import type { Plugin, PluginFilters } from './types';
 import type { BoardSettings } from '../lib/boardForm';
 import { hasRange, type RangeQuery } from '../lib/history';
@@ -326,5 +327,7 @@ export function useChangePassword() {
   return useMutation({
     mutationFn: async (body: { current_password: string; new_password: string }) =>
       unwrap(await api.POST('/api/auth/password', { body })),
+    // The server ended every session, this one included, and sent a new pair for it.
+    onSuccess: (tokens) => setTokens(tokens),
   });
 }

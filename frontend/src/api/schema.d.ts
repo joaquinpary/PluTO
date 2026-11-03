@@ -13,7 +13,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Change the user's password */
+        /**
+         * Change the user's password
+         * @description Ends every session of the user, this one included, and answers a new pair for this one.
+         */
         post: operations["auth_password_create"];
         delete?: never;
         options?: never;
@@ -1128,6 +1131,10 @@ export interface components {
             username: string;
             password: string;
         };
+        TokenPair: {
+            access: string;
+            refresh: string;
+        };
         TokenRefresh: {
             readonly access: string;
             refresh: string;
@@ -1178,12 +1185,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description No response body */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
             };
             /** @description Wrong current password, or a new one the validators reject. */
             400: {

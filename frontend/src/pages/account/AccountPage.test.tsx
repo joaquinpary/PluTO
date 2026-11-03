@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { logout } from '../../api/auth';
+import { REFRESH_KEY } from '../../api/tokens';
 import { renderWithProviders } from '../../test/render';
 import { server } from '../../test/server';
 import { AccountPage } from './AccountPage';
@@ -25,7 +26,7 @@ describe('AccountPage', () => {
     server.use(
       http.post('/api/auth/password', () => {
         sent = true;
-        return new HttpResponse(null, { status: 204 });
+        return HttpResponse.json({ access: 'a9', refresh: 'r9' });
       }),
     );
     const user = userEvent.setup();
@@ -44,7 +45,7 @@ describe('AccountPage', () => {
         bodies.push(await request.json());
         return bodies.length === 1
           ? HttpResponse.json({ current_password: ['La contraseña actual no es correcta.'] }, { status: 400 })
-          : new HttpResponse(null, { status: 204 });
+          : HttpResponse.json({ access: 'a9', refresh: 'r9' });
       }),
     );
     const user = userEvent.setup();
@@ -60,6 +61,8 @@ describe('AccountPage', () => {
     expect(await screen.findByText('Contraseña cambiada.')).toBeInTheDocument();
     expect(bodies[1]).toEqual({ current_password: 'vieja-1234', new_password: 'nueva-segura-5678' });
     expect(screen.getByLabelText('Contraseña actual')).toHaveValue('');
+    // The server ended every session, this one included: it lives on with the new pair.
+    expect(localStorage.getItem(REFRESH_KEY)).toBe('r9');
   });
 
   it('logs out and goes to the login', async () => {

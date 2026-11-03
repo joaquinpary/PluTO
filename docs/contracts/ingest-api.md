@@ -167,7 +167,7 @@ se mide el error de apuntamiento y la latencia.
 | `POST /api/auth/token` | `{"username", "password"}` | `{"access", "refresh"}` |
 | `POST /api/auth/token/refresh` | `{"refresh"}` | `{"access", "refresh"}` nuevos |
 | `POST /api/auth/token/blacklist` | `{"refresh"}` | `{}`: cierra la sesión |
-| `POST /api/auth/password` | `{"current_password", "new_password"}` | `204`: cambia la contraseña |
+| `POST /api/auth/password` | `{"current_password", "new_password"}` | `{"access", "refresh"}`: cambia la contraseña y cierra las demás sesiones |
 
 - `GET` y `POST /api/setup` no piden login: son lo primero que ve una instalación nueva.
   `POST` solo funciona mientras no exista ningún usuario (`409` si ya hay uno) y valida la
@@ -178,7 +178,8 @@ se mide el error de apuntamiento y la latencia.
   queda en una lista negra. El logout lo manda a esa lista sin esperar a que venza.
 - Credenciales incorrectas o un `refresh` ya usado: `401`.
 - Cambiar la contraseña pide la actual: `400` si no coincide o si la nueva no pasa los
-  validadores.
+  validadores. Manda a la lista negra todos los `refresh` del usuario (el de un celular
+  perdido, por ejemplo) y responde un par nuevo para la sesión que la cambió.
 - Para llamar desde un navegador en otro origen, ese origen tiene que estar en
   `CORS_ALLOWED_ORIGINS`. El front no lo necesita: en producción lo sirve nginx en el mismo
   origen que la API, y en desarrollo Vite le hace de proxy.

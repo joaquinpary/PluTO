@@ -97,12 +97,28 @@ class PasswordTests(FrontTestCase):
     def operator(self):
         return get_user_model().objects.get(username='operator')
 
+    def refresh(self, token):
+        return Client().post('/api/auth/token/refresh', content_type='application/json',
+                             data=json.dumps({'refresh': token}))
+
     def test_changes_the_password(self):
         response = self.change('x', STRONG_PASSWORD)
 
-        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.status_code, 200)
         self.assertTrue(self.operator().check_password(STRONG_PASSWORD))
         self.assertFalse(self.operator().check_password('x'))
+
+    def test_ends_every_other_session_and_hands_this_one_a_new_pair(self):
+        # A session on a lost phone, say: its refresh token must stop working.
+        other = Client().post('/api/auth/token', content_type='application/json',
+                              data=json.dumps({'username': 'operator', 'password': 'x'})).json()['refresh']
+
+        tokens = self.change('x', STRONG_PASSWORD).json()
+
+        self.assertEqual(self.refresh(other).status_code, 401)
+        self.assertEqual(self.refresh(tokens['refresh']).status_code, 200)
+        me = Client(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}").get('/api/boards')
+        self.assertEqual(me.status_code, 200)
 
     def test_a_wrong_current_password_is_rejected(self):
         response = self.change('not-it', STRONG_PASSWORD)

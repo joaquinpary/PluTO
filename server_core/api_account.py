@@ -9,9 +9,11 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .api import Conflict
-from .serializers import HealthSerializer, PasswordChangeSerializer, SetupSerializer, SetupStatusSerializer
+from .serializers import HealthSerializer, PasswordChangeSerializer, SetupSerializer, SetupStatusSerializer, TokenPairSerializer
 
 
 # Any constant: the key of the Postgres advisory lock that serialises first-run setups.
@@ -76,9 +78,10 @@ class SetupView(OpenView):
 class PasswordView(APIView):
     @extend_schema(
         summary="Change the user's password",
+        description='Ends every session of the user, this one included, and answers a new pair for this one.',
         request=PasswordChangeSerializer,
         responses={
-            204: None,
+            200: TokenPairSerializer,
             400: OpenApiResponse(description='Wrong current password, or a new one the validators reject.'),
         },
     )
@@ -87,4 +90,8 @@ class PasswordView(APIView):
         serializer.is_valid(raise_exception=True)
         request.user.set_password(serializer.validated_data['new_password'])
         request.user.save(update_fields=['password'])
-        return Response(status=204)
+        # A refresh token left on a lost phone would otherwise keep renewing itself.
+        for token in OutstandingToken.objects.filter(user=request.user):
+            BlacklistedToken.objects.get_or_create(token=token)
+        refresh = RefreshToken.for_user(request.user)
+        return Response({'access': str(refresh.access_token), 'refresh': str(refresh)})

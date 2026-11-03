@@ -187,6 +187,11 @@ class SetupSerializer(serializers.Serializer):
         return attrs
 
 
+class TokenPairSerializer(serializers.Serializer):
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+
+
 class PasswordChangeSerializer(serializers.Serializer):
     current_password = serializers.CharField(write_only=True, trim_whitespace=False, style={'input_type': 'password'})
     new_password = serializers.CharField(write_only=True, trim_whitespace=False, style={'input_type': 'password'})
