@@ -272,3 +272,23 @@ class PluginSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.ListField(child=serializers.CharField()))
     def get_warnings(self, plugin):
         return config_warnings(plugin)
+
+
+# --- Plugin actions and logs ---------------------------------------------------
+
+DEFAULT_LOG_LINES = 100
+MAX_LOG_LINES = 1000
+
+
+class CoordinatesFileSerializer(serializers.Serializer):
+    file = serializers.FileField(help_text='The coordinates file: UTF-8 text, up to 1 MiB.')
+
+
+class LogsQuerySerializer(serializers.Serializer):
+    tail = serializers.IntegerField(min_value=1, max_value=MAX_LOG_LINES, default=DEFAULT_LOG_LINES,
+                                    help_text=f'How many of the last lines, 1 to {MAX_LOG_LINES}.')
+
+
+class LogsSerializer(serializers.Serializer):
+    source = serializers.CharField(help_text='The plugin instance or the service the lines come from.')
+    lines = serializers.ListField(child=serializers.CharField(allow_blank=True))

@@ -2,6 +2,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 
 from .lifecycle import LifecycleError
@@ -279,3 +280,156 @@ class PluginDeleteTests(PluginApiTestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json(), {'detail': 'tinygs-1 has data: stop it instead.'})
+
+
+class PluginActionTests(PluginApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.plugin = self.tinygs()
+
+    def post(self, action):
+        return self.client.post(f'/api/plugins/{self.plugin.plugin_uuid}/{action}')
+
+    def test_each_action_goes_through_the_lifecycle_and_answers_the_instance(self):
+        for action, status in [('launch', 'RUNNING'), ('stop', 'STOPPED'), ('sync', 'ERROR')]:
+            def apply(plugin, status=status):
+                plugin.status = status
+                plugin.save()
+                return plugin
+
+            with self.subTest(action=action), patch(f'server_core.lifecycle.{action}', side_effect=apply) as call:
+                response = self.post(action)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(set(response.json()), PLUGIN_KEYS)
+                self.assertEqual(response.json()['status'], status)
+                self.assertEqual(call.call_args.args[0].pk, self.plugin.pk)
+
+    def test_lifecycle_errors_become_http_codes(self):
+        cases = [
+            ('launch', 'invalid_config', 400),
+            ('launch', 'board_busy', 409),
+            ('launch', 'already_running', 409),
+            ('launch', 'docker', 502),
+            ('stop', 'docker', 502),
+            ('sync', 'docker', 502),
+        ]
+        for action, code, http_status in cases:
+            error = LifecycleError(code, f'{code} happened')
+            with self.subTest(action=action, code=code), patch(f'server_core.lifecycle.{action}', side_effect=error):
+                response = self.post(action)
+
+                self.assertEqual(response.status_code, http_status)
+                self.assertEqual(response.json(), {'detail': f'{code} happened'})
+
+    def test_an_invalid_config_on_launch_comes_by_field(self):
+        error = LifecycleError('invalid_config', 'Fix the configuration first.',
+                               fields={'tinygs_device': ['This field is required.']})
+        with patch('server_core.lifecycle.launch', side_effect=error):
+            response = self.post('launch')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {
+            'detail': 'Fix the configuration first.',
+            'config': {'tinygs_device': ['This field is required.']},
+        })
+
+    def test_actions_are_post_only_and_need_a_known_instance(self):
+        self.assertEqual(self.client.get(f'/api/plugins/{self.plugin.plugin_uuid}/launch').status_code, 405)
+        self.assertEqual(self.client.post(f'/api/plugins/{UNKNOWN_UUID}/launch').status_code, 404)
+
+
+class CoordinatesFileTests(PluginApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.plugin = PluginInstance.objects.create(
+            name='tracker', plugin_type='file_tracker', config={'coord_type': 'ENU', 'coord_format': 'POLAR'},
+        )
+        self.url = f'/api/plugins/{self.plugin.plugin_uuid}/coordinates-file'
+
+    def upload(self, content=b'0 45 10\n'):
+        return self.client.post(self.url, {'file': SimpleUploadedFile('pass.txt', content)})
+
+    def test_hands_the_upload_to_the_lifecycle(self):
+        received = {}
+
+        def send(plugin, upload):
+            # Read here: the upload is closed once the response is out.
+            received.update(plugin=plugin.pk, name=upload.name, content=upload.read())
+
+        with patch('server_core.lifecycle.send_coordinates_file', side_effect=send):
+            response = self.upload()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['name'], 'tracker')
+        self.assertEqual(received, {'plugin': self.plugin.pk, 'name': 'pass.txt', 'content': b'0 45 10\n'})
+
+    def test_what_the_lifecycle_rejects_is_a_bad_request(self):
+        for code in ('not_file_tracker', 'bad_file'):
+            error = LifecycleError(code, f'{code} happened')
+            with self.subTest(code=code), patch('server_core.lifecycle.send_coordinates_file', side_effect=error):
+                response = self.upload()
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json(), {'detail': f'{code} happened'})
+
+    def test_an_unreachable_broker_is_service_unavailable(self):
+        error = LifecycleError('broker', 'Could not reach the broker: refused')
+        with patch('server_core.lifecycle.send_coordinates_file', side_effect=error):
+            response = self.upload()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {'detail': 'Could not reach the broker: refused'})
+
+    @patch('server_core.lifecycle.send_coordinates_file')
+    def test_without_a_file_nothing_is_sent(self, send):
+        response = self.client.post(self.url, {})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('file', response.json())
+        send.assert_not_called()
+
+
+class PluginLogsTests(PluginApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.plugin = self.tinygs()
+        self.url = f'/api/plugins/{self.plugin.plugin_uuid}/logs'
+
+    def test_the_last_100_lines_by_default(self):
+        self.orchestrator.container_logs.return_value = ['connected', 'subscribed']
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'source': 'tinygs-1', 'lines': ['connected', 'subscribed']})
+        self.orchestrator.container_logs.assert_called_once_with('tinygs', self.plugin.plugin_uuid, 100)
+
+    def test_tail_goes_from_1_to_1000(self):
+        self.assertEqual(self.client.get(f'{self.url}?tail=1000').status_code, 200)
+        self.orchestrator.container_logs.assert_called_once_with('tinygs', self.plugin.plugin_uuid, 1000)
+
+        for tail in ('0', '1001', 'many'):
+            with self.subTest(tail=tail):
+                response = self.client.get(f'{self.url}?tail={tail}')
+
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('tail', response.json())
+
+    def test_an_instance_without_a_container_is_not_found(self):
+        # container_logs() answers None without a container (Task 2).
+        self.orchestrator.container_logs.return_value = None
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {'detail': 'tinygs-1 has no container. Launch it first.'})
+
+    def test_without_docker_it_is_a_bad_gateway(self):
+        self.orchestrator.client = None
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json(), {'detail': 'Could not reach Docker.'})
+        self.orchestrator.container_logs.assert_not_called()

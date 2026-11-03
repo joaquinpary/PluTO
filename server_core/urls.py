@@ -26,6 +26,12 @@ urlpatterns = [
     path('plugins', api_plugins.PluginsView.as_view(), name='api-plugins'),
     path('plugins/<uuid:plugin_uuid>', api_plugins.PluginDetailView.as_view(), name='api-plugin'),
     path('plugins/<uuid:plugin_uuid>/board', api.PluginBoardView.as_view(), name='api-plugin-board'),
+    path('plugins/<uuid:plugin_uuid>/launch', api_plugins.PluginLaunchView.as_view(), name='api-plugin-launch'),
+    path('plugins/<uuid:plugin_uuid>/stop', api_plugins.PluginStopView.as_view(), name='api-plugin-stop'),
+    path('plugins/<uuid:plugin_uuid>/sync', api_plugins.PluginSyncView.as_view(), name='api-plugin-sync'),
+    path('plugins/<uuid:plugin_uuid>/coordinates-file', api_plugins.PluginCoordinatesFileView.as_view(),
+         name='api-plugin-coordinates-file'),
+    path('plugins/<uuid:plugin_uuid>/logs', api_plugins.PluginLogsView.as_view(), name='api-plugin-logs'),
     # The OpenAPI schema and its Swagger UI.
     path('schema', SpectacularAPIView.as_view(), name='api-schema'),
     path('docs', SpectacularSwaggerView.as_view(url_name='api-schema'), name='api-docs'),

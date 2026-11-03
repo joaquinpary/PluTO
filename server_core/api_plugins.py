@@ -1,4 +1,4 @@
-"""The plugin instances for the front end: their types, create, edit and delete.
+"""The plugin instances for the front end: types, create, edit and delete, actions and logs.
 
 What it takes to launch, stop or delete an instance lives in lifecycle.py;
 these views only translate it to HTTP.
@@ -8,6 +8,7 @@ import logging
 import docker
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.exceptions import NotFound
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -16,7 +17,13 @@ from .lifecycle import LifecycleError
 from .models import PluginInstance
 from .orchestrator import PluginOrchestrator
 from .plugin_handlers import PLUGIN_HANDLERS
-from .serializers import PluginSerializer, PluginTypeSerializer
+from .serializers import (
+    CoordinatesFileSerializer,
+    LogsQuerySerializer,
+    LogsSerializer,
+    PluginSerializer,
+    PluginTypeSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -172,3 +179,101 @@ class PluginDetailView(APIView):
         except LifecycleError as exc:
             return lifecycle_error_response(exc)
         return Response(status=204)
+
+
+# --- Actions -------------------------------------------------------------------
+
+DOCKER_FAILED = OpenApiResponse(description='Docker failed; detail says how.')
+
+
+def run_action(action, plugin_uuid):
+    """Apply a lifecycle function and answer with the instance as it ended up."""
+    plugin = get_plugin(plugin_uuid)
+    try:
+        plugin = action(plugin)
+    except LifecycleError as exc:
+        return lifecycle_error_response(exc)
+    return plugin_response(plugin)
+
+
+class PluginLaunchView(APIView):
+    @extend_schema(
+        summary='Launch a plugin instance',
+        description='The first launch of a type builds its image and can take minutes: it is one long request.',
+        request=None,
+        responses={
+            200: PluginSerializer,
+            400: OpenApiResponse(description='The config is invalid; errors by field under "config".'),
+            404: UNKNOWN_PLUGIN,
+            409: OpenApiResponse(description='Already running, or another running instance drives its board (RF-31.1).'),
+            502: DOCKER_FAILED,
+        },
+    )
+    def post(self, request, plugin_uuid):
+        return run_action(lifecycle.launch, plugin_uuid)
+
+
+class PluginStopView(APIView):
+    @extend_schema(summary='Stop a plugin instance', description='Also from ERROR.', request=None,
+                   responses={200: PluginSerializer, 404: UNKNOWN_PLUGIN, 502: DOCKER_FAILED})
+    def post(self, request, plugin_uuid):
+        return run_action(lifecycle.stop, plugin_uuid)
+
+
+class PluginSyncView(APIView):
+    @extend_schema(summary='Match the status of a plugin instance with its container', request=None,
+                   responses={200: PluginSerializer, 404: UNKNOWN_PLUGIN, 502: DOCKER_FAILED})
+    def post(self, request, plugin_uuid):
+        return run_action(lifecycle.sync, plugin_uuid)
+
+
+class PluginCoordinatesFileView(APIView):
+    parser_classes = [MultiPartParser]
+
+    @extend_schema(
+        summary='Send a coordinates file to a file_tracker instance',
+        description='Retained on the broker: a running instance publishes it at once, a stopped one when launched.',
+        request={'multipart/form-data': CoordinatesFileSerializer},
+        responses={
+            200: PluginSerializer,
+            400: OpenApiResponse(description='No file, not a file_tracker, not UTF-8 text or above 1 MiB.'),
+            404: UNKNOWN_PLUGIN,
+            503: OpenApiResponse(description='The broker did not answer; nothing was sent.'),
+        },
+    )
+    def post(self, request, plugin_uuid):
+        plugin = get_plugin(plugin_uuid)
+        serializer = CoordinatesFileSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lifecycle.send_coordinates_file(plugin, serializer.validated_data['file'])
+        except LifecycleError as exc:
+            return lifecycle_error_response(exc)
+        return plugin_response(plugin)
+
+
+class PluginLogsView(APIView):
+    @extend_schema(
+        summary='The last lines of the container log of a plugin instance',
+        parameters=[LogsQuerySerializer],
+        responses={
+            200: LogsSerializer,
+            400: OpenApiResponse(description='tail out of range.'),
+            404: OpenApiResponse(description='Unknown plugin, or it has no container.'),
+            502: OpenApiResponse(description='Could not reach Docker.'),
+        },
+    )
+    def get(self, request, plugin_uuid):
+        plugin = get_plugin(plugin_uuid)
+        query = LogsQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+
+        orchestrator = PluginOrchestrator()
+        if orchestrator.client is None:
+            return Response({'detail': 'Could not reach Docker.'}, status=502)
+        lines = orchestrator.container_logs(plugin.plugin_type, plugin.plugin_uuid, query.validated_data['tail'])
+        if lines is None:
+            # No container, which is what stopping an instance leaves. A Docker
+            # error while looking it up is None too; the orchestrator logs it.
+            raise NotFound(f'{plugin.name} has no container. Launch it first.')
+        return Response(LogsSerializer({'source': plugin.name, 'lines': lines}).data)
