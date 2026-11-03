@@ -1,6 +1,8 @@
 import { AppShell, Burger, Group, NavLink, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { logout } from '../api/auth';
 
 export const NAV_LINKS = [
   { to: '/', label: 'Inicio' },
@@ -19,6 +21,12 @@ function isActive(to: string, pathname: string): boolean {
 export function AppLayout() {
   const [opened, { toggle, close }] = useDisclosure();
   const { pathname } = useLocation();
+  const queryClient = useQueryClient();
+
+  async function handleLogout() {
+    await logout(); // RequireAuth sees the session end and goes to /login
+    queryClient.clear();
+  }
 
   return (
     <AppShell
@@ -34,16 +42,21 @@ export function AppLayout() {
       </AppShell.Header>
 
       <AppShell.Navbar p="xs">
-        {NAV_LINKS.map((link) => (
-          <NavLink
-            key={link.to}
-            component={Link}
-            to={link.to}
-            label={link.label}
-            active={isActive(link.to, pathname)}
-            onClick={close}
-          />
-        ))}
+        <AppShell.Section grow>
+          {NAV_LINKS.map((link) => (
+            <NavLink
+              key={link.to}
+              component={Link}
+              to={link.to}
+              label={link.label}
+              active={isActive(link.to, pathname)}
+              onClick={close}
+            />
+          ))}
+        </AppShell.Section>
+        <AppShell.Section>
+          <NavLink component="button" label="Cerrar sesión" onClick={handleLogout} />
+        </AppShell.Section>
       </AppShell.Navbar>
 
       <AppShell.Main>

@@ -1,6 +1,10 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
+import { getAccess, REFRESH_KEY, setTokens } from '../api/tokens';
 import { renderRoutes } from '../test/render';
+import { server } from '../test/server';
 import { AppLayout } from './AppLayout';
 
 function renderLayout(path: string) {
@@ -44,4 +48,21 @@ describe('AppLayout', () => {
     expect(screen.getByRole('link', { name: 'Inicio' })).not.toHaveAttribute('data-active');
   });
 
+  it('logs out: blacklists the refresh token and forgets the session', async () => {
+    setTokens({ access: 'a1', refresh: 'r1' });
+    let blacklisted: unknown;
+    server.use(
+      http.post('/api/auth/token/blacklist', async ({ request }) => {
+        blacklisted = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    renderLayout('/');
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+
+    await waitFor(() => expect(blacklisted).toEqual({ refresh: 'r1' }));
+    expect(getAccess()).toBeNull();
+    expect(localStorage.getItem(REFRESH_KEY)).toBeNull();
+  });
 });
