@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from .api_tokens import hash_token
-from .lifecycle import LifecycleError, launch
+from .lifecycle import LifecycleError, launch, stop, sync
 from .models import PluginInstance, Rotor
 
 DEVICE_ID = 'a1b2c3d4e5f6'
@@ -123,3 +123,89 @@ class LaunchTests(TestCase):
         launch(self.plugin)
 
         self.assertEqual(self.spawned(orchestrator_cls)['plugin_type'], 'tinygs')
+
+
+@patch('server_core.lifecycle.PluginOrchestrator')
+class StopTests(TestCase):
+    def setUp(self):
+        self.plugin = PluginInstance.objects.create(
+            name='tinygs-1', plugin_type='tinygs', status=RUNNING,
+            container_id='container-123', api_token_hash='a' * 64,
+        )
+
+    def runtime(self):
+        self.plugin.refresh_from_db()
+        return self.plugin.status, self.plugin.container_id, self.plugin.api_token_hash
+
+    def test_stopping_removes_the_container_and_revokes_the_token(self, orchestrator_cls):
+        orchestrator_cls.return_value.kill_plugin.return_value = (True, 'Plugin shut down correctly.')
+
+        stop(self.plugin)
+
+        orchestrator_cls.return_value.kill_plugin.assert_called_once_with('tinygs', self.plugin.plugin_uuid)
+        self.assertEqual(self.runtime(), (STOPPED, '', ''))
+
+    def test_stops_from_error(self, orchestrator_cls):
+        # The admin only stopped RUNNING instances, so one in ERROR needed a sync first.
+        orchestrator_cls.return_value.kill_plugin.return_value = (True, 'Plugin shut down correctly.')
+        self.plugin.status = ERROR
+        self.plugin.save()
+
+        stop(self.plugin)
+
+        self.assertEqual(self.runtime(), (STOPPED, '', ''))
+
+    def test_stops_the_container_of_the_stored_type(self, orchestrator_cls):
+        # Editing the type of a running instance used to orphan its container.
+        orchestrator_cls.return_value.kill_plugin.return_value = (True, 'Plugin shut down correctly.')
+        self.plugin.plugin_type = 'file_tracker'  # edited, never saved
+
+        stop(self.plugin)
+
+        orchestrator_cls.return_value.kill_plugin.assert_called_once_with('tinygs', self.plugin.plugin_uuid)
+
+    def test_a_failed_stop_changes_nothing(self, orchestrator_cls):
+        orchestrator_cls.return_value.kill_plugin.return_value = (False, 'Internal error: boom')
+
+        with self.assertRaises(LifecycleError) as raised:
+            stop(self.plugin)
+
+        self.assertEqual(raised.exception.code, 'docker')
+        self.assertEqual(self.runtime(), (RUNNING, 'container-123', 'a' * 64))
+
+
+@patch('server_core.lifecycle.PluginOrchestrator')
+class SyncTests(TestCase):
+    def setUp(self):
+        self.plugin = PluginInstance.objects.create(
+            name='tinygs-1', plugin_type='tinygs', status=RUNNING,
+            container_id='container-123', api_token_hash='a' * 64,
+        )
+
+    def sync_with(self, orchestrator_cls, answer):
+        orchestrator_cls.return_value.get_container_status.return_value = answer
+        sync(self.plugin)
+        self.plugin.refresh_from_db()
+        return self.plugin.status, self.plugin.container_id, self.plugin.api_token_hash
+
+    def test_a_vanished_container_stops_the_instance_and_revokes_its_token(self, orchestrator_cls):
+        self.assertEqual(self.sync_with(orchestrator_cls, (True, 'not_found')), (STOPPED, '', ''))
+
+    def test_a_container_that_is_not_running_is_an_error(self, orchestrator_cls):
+        self.assertEqual(self.sync_with(orchestrator_cls, (True, 'exited')), (ERROR, 'container-123', 'a' * 64))
+
+    def test_a_running_container_is_running(self, orchestrator_cls):
+        self.plugin.status = ERROR
+        self.plugin.save()
+
+        self.assertEqual(self.sync_with(orchestrator_cls, (True, 'running')), (RUNNING, 'container-123', 'a' * 64))
+
+    def test_without_docker_nothing_changes(self, orchestrator_cls):
+        orchestrator_cls.return_value.get_container_status.return_value = (False, 'unknown')
+
+        with self.assertRaises(LifecycleError) as raised:
+            sync(self.plugin)
+
+        self.assertEqual(raised.exception.code, 'docker')
+        self.plugin.refresh_from_db()
+        self.assertEqual(self.plugin.status, RUNNING)

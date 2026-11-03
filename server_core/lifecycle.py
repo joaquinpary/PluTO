@@ -85,3 +85,40 @@ def launch(instance):
 
     _save_runtime(instance, RUNNING, result, api_token_hash)
     return instance
+
+
+def stop(instance):
+    """Remove the container and revoke its token. Works from any status, ERROR included."""
+    instance.refresh_from_db()
+    success, result = PluginOrchestrator().kill_plugin(instance.plugin_type, instance.plugin_uuid)
+    if not success:
+        # Nothing changes: the container may still be there, and so is its record.
+        raise LifecycleError('docker', result)
+    _save_runtime(instance, STOPPED, '', '')
+    return instance
+
+
+def _status_for(runtime_status):
+    if runtime_status == 'running':
+        return RUNNING
+    if runtime_status == 'not_found':
+        return STOPPED
+    return ERROR
+
+
+def sync(instance):
+    """Make the stored status say what Docker says."""
+    instance.refresh_from_db()
+    success, runtime_status = PluginOrchestrator().get_container_status(instance.plugin_type, instance.plugin_uuid)
+    if not success:
+        raise LifecycleError('docker', 'Could not query the container status from Docker.')
+
+    container_id, api_token_hash = instance.container_id, instance.api_token_hash
+    if runtime_status == 'not_found':
+        # No container left to use the token.
+        container_id, api_token_hash = '', ''
+    status = _status_for(runtime_status)
+
+    if (instance.status, instance.container_id, instance.api_token_hash) != (status, container_id, api_token_hash):
+        _save_runtime(instance, status, container_id, api_token_hash)
+    return instance
