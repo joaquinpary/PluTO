@@ -493,3 +493,40 @@ class PluginDataRowSerializer(serializers.ModelSerializer):
     @extend_schema_field(SatelliteSerializer(allow_null=True))
     def get_satellite(self, row):
         return satellite_from_tracking(row.payload)
+
+
+# --- Results (GET /api/results/...) ---
+
+class PointingErrorQuerySerializer(RangeQuerySerializer):
+    range_required = True
+    board = serializers.RegexField(DEVICE_ID_RE, help_text='device_id of the board.')
+
+
+class ReceptionQuerySerializer(RangeQuerySerializer):
+    range_required = True
+    plugin = serializers.UUIDField(help_text='plugin_uuid of the instance.')
+
+
+class PassErrorSerializer(serializers.Serializer):
+    start = serializers.DateTimeField()
+    end = serializers.DateTimeField()
+    source = serializers.ChoiceField(['meas', 'commanded'])
+    samples = serializers.IntegerField()
+    mean_err_cdeg = serializers.FloatField(allow_null=True)
+    max_err_cdeg = serializers.IntegerField(allow_null=True)
+
+
+class PointingErrorSerializer(serializers.Serializer):
+    passes = PassErrorSerializer(many=True)
+
+
+class ReceptionDaySerializer(serializers.Serializer):
+    date = serializers.DateField()
+    packets = serializers.IntegerField()
+    crc_errors = serializers.IntegerField()
+    rssi_mean = serializers.FloatField(allow_null=True)
+    snr_mean = serializers.FloatField(allow_null=True)
+
+
+class ReceptionSerializer(serializers.Serializer):
+    days = ReceptionDaySerializer(many=True)

@@ -1,5 +1,6 @@
 """The history the front end browses and exports (spec §4.4): what the boards
-reported, what the dispatcher sent and what the plugins produced."""
+reported, what the plugins sent them and produced, and the results
+computed from them."""
 from django.db.models import Count, F, Max, Min
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.exceptions import NotFound
@@ -9,15 +10,20 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .downsample import downsample
-from .models import DispatchOrder, PluginData, Rotor, RotorState
+from .models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
 from .pagination import TimeCursorPagination
 from .renderers import CSVRenderer
+from .results import pointing_error, reception_by_day
 from .serializers import (
     OrderRowSerializer,
     OrdersQuerySerializer,
     PluginDataQuerySerializer,
     PluginDataRowSerializer,
+    PointingErrorQuerySerializer,
+    PointingErrorSerializer,
     RangeQuerySerializer,
+    ReceptionQuerySerializer,
+    ReceptionSerializer,
     SeriesQuerySerializer,
     SeriesSerializer,
     StateRowSerializer,
@@ -121,7 +127,7 @@ class BoardStatesSeriesView(APIView):
 
 
 @extend_schema_view(get=extend_schema(
-    summary='Orders the dispatcher sent to the boards',
+    summary='Orders the plugins sent to their boards',
     description='Paginated by a cursor, newest first. `?format=csv` returns every row of the range, oldest first.',
     parameters=[OrdersQuerySerializer],
 ))
@@ -152,3 +158,58 @@ class PluginDataHistoryView(HistoryListView):
 
     def base_queryset(self):
         return PluginData.objects.select_related('plugin')
+
+
+def _results_response(request, key, rows, serializer_class, csv_name):
+    """{key: rows} as JSON or, with ?format=csv, one CSV line per row as a download."""
+    data = serializer_class({key: rows}).data
+    if request.accepted_renderer.format != 'csv':
+        return Response(data)
+    # CSVRenderer writes a line per element of "results".
+    response = Response({'results': data[key]})
+    response['Content-Disposition'] = f'attachment; filename="{csv_name}.csv"'
+    return response
+
+
+class PointingErrorView(APIView):
+    renderer_classes = [JSONRenderer, CSVRenderer]
+
+    @extend_schema(
+        summary='Pointing error per pass of a board',
+        description=(
+            'A pass is the BATCH orders up to the HOLD that ended them; passes still in progress are left out. '
+            'source is `meas` when the board reported err_cdeg (encoders), and `commanded` when the error is '
+            'what the board reported against the order it was executing, matched by t_sent_ms. '
+            '`?format=csv` returns one line per pass.'
+        ),
+        parameters=[PointingErrorQuerySerializer],
+        responses={200: PointingErrorSerializer, 400: OpenApiResponse(description='Missing board or range.'),
+                   404: OpenApiResponse(description='Unknown board.')},
+    )
+    def get(self, request):
+        params = _query(PointingErrorQuerySerializer, request)
+        rotor = _rotor(params['board'])
+        passes = pointing_error(rotor, params['from'], params['to'])
+        return _results_response(request, 'passes', passes, PointingErrorSerializer, 'pointing-error')
+
+
+class ReceptionView(APIView):
+    renderer_classes = [JSONRenderer, CSVRenderer]
+
+    @extend_schema(
+        summary='Reception per day of a plugin instance',
+        description=(
+            'Packets, CRC errors and mean RSSI and SNR of its rx data, one entry per UTC day of the range. '
+            '`?format=csv` returns one line per day.'
+        ),
+        parameters=[ReceptionQuerySerializer],
+        responses={200: ReceptionSerializer, 400: OpenApiResponse(description='Missing plugin or range.'),
+                   404: OpenApiResponse(description='Unknown plugin instance.')},
+    )
+    def get(self, request):
+        params = _query(ReceptionQuerySerializer, request)
+        plugin = PluginInstance.objects.filter(plugin_uuid=params['plugin']).first()
+        if plugin is None:
+            raise NotFound('No plugin instance with that uuid.')
+        days = reception_by_day(plugin, params['from'], params['to'])
+        return _results_response(request, 'days', days, ReceptionSerializer, 'reception')
