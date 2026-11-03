@@ -263,6 +263,11 @@ def config_warnings(plugin):
             f'min_elevation_deg ({plugin_min:g}) is below the minimum of the board ({rotor.min_elevation_deg:g}): '
             'every pass that starts below the board minimum is dropped.'
         )
+    if rotor is not None and rotor.location is None:
+        warnings.append(
+            f'The board {rotor} has no location: tinygs computes no passes, and file_tracker converts '
+            'its coordinates from (0, 0, 0). Set it in the board.'
+        )
     return warnings
 
 

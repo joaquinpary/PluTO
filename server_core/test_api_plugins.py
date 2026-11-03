@@ -8,7 +8,7 @@ from django.test import Client
 from .lifecycle import LifecycleError
 from .models import PluginInstance, Rotor
 from .orchestrator import PluginOrchestrator
-from .test_api import DEVICE_ID, FrontTestCase
+from .test_api import DEVICE_ID, OTHER_DEVICE_ID, FrontTestCase
 
 PLUGIN_KEYS = {
     'plugin_uuid', 'name', 'plugin_type', 'config', 'status', 'docker_status', 'board',
@@ -242,7 +242,7 @@ class PluginEditTests(PluginApiTestCase):
 class PluginWarningTests(PluginApiTestCase):
     def setUp(self):
         super().setUp()
-        self.rotor = Rotor.objects.create(device_id=DEVICE_ID, min_elevation_deg=15)
+        self.rotor = Rotor.objects.create(device_id=DEVICE_ID, min_elevation_deg=15, latitude_deg=-31.4, longitude_deg=-64.2)
 
     def warnings_for(self, name, min_elevation_deg, rotor):
         plugin = self.tinygs(name=name, rotor=rotor,
@@ -259,6 +259,16 @@ class PluginWarningTests(PluginApiTestCase):
         self.assertEqual(self.warnings_for('same', 15, self.rotor), [])
         self.assertEqual(self.warnings_for('high', 20, self.rotor), [])
         self.assertEqual(self.warnings_for('no-board', 0, None), [])
+
+    def test_warns_when_the_board_has_no_location(self):
+        # file_tracker would convert its file from (0, 0, 0) and point the real antenna
+        # somewhere else; tinygs would compute no passes. Neither says so on its own.
+        unplaced = Rotor.objects.create(device_id=OTHER_DEVICE_ID, min_elevation_deg=0)
+
+        warnings = self.warnings_for('unplaced', 10, unplaced)
+
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('location', warnings[0])
 
 
 class PluginDeleteTests(PluginApiTestCase):
