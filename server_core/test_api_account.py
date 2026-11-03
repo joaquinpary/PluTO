@@ -1,10 +1,12 @@
 """The account endpoints: healthcheck, first-run setup and password change."""
 import json
+import threading
+import time
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.db import OperationalError
-from django.test import Client, SimpleTestCase, TestCase
+from django.db import OperationalError, connection
+from django.test import Client, SimpleTestCase, TestCase, TransactionTestCase
 
 from .test_api import FrontTestCase
 
@@ -121,3 +123,35 @@ class PasswordTests(FrontTestCase):
                                  data=json.dumps({'current_password': 'x', 'new_password': STRONG_PASSWORD}))
 
         self.assertEqual(response.status_code, 401)
+
+
+class ConcurrentSetupTests(TransactionTestCase):
+    """Two first-run setups at once (two browsers, or a double click) must not
+    leave a second superuser the front end has no way to show."""
+
+    def test_only_one_of_two_simultaneous_setups_creates_a_user(self):
+        User = get_user_model()
+        create = User.objects.create_superuser
+
+        def slow_create(*args, **kwargs):
+            time.sleep(0.5)  # widens the window between the check and the insert
+            return create(*args, **kwargs)
+
+        codes = []
+
+        def post(username):
+            try:
+                codes.append(Client().post('/api/setup', content_type='application/json',
+                                           data=json.dumps({'username': username, 'password': STRONG_PASSWORD})).status_code)
+            finally:
+                connection.close()
+
+        with patch.object(User.objects, 'create_superuser', side_effect=slow_create):
+            threads = [threading.Thread(target=post, args=(name,)) for name in ('first', 'second')]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        self.assertEqual(sorted(codes), [201, 409])
+        self.assertEqual(User.objects.count(), 1)

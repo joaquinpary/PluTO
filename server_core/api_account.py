@@ -4,7 +4,7 @@ health and setup are open, and do not even read the Authorization header: a
 stale token left in the browser must not turn them into a 401.
 """
 from django.contrib.auth import get_user_model
-from django.db import DatabaseError, connection
+from django.db import DatabaseError, connection, transaction
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -12,6 +12,10 @@ from rest_framework.views import APIView
 
 from .api import Conflict
 from .serializers import HealthSerializer, PasswordChangeSerializer, SetupSerializer, SetupStatusSerializer
+
+
+# Any constant: the key of the Postgres advisory lock that serialises first-run setups.
+SETUP_LOCK = 0x504C55544F  # 'PLUTO'
 
 
 class OpenView(APIView):
@@ -56,9 +60,16 @@ class SetupView(OpenView):
 
         serializer = SetupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = User.objects.create_superuser(
-            serializer.validated_data['username'], password=serializer.validated_data['password'],
-        )
+        with transaction.atomic():
+            # Two setups at once must not both pass the check: the second waits
+            # here and then finds the first user. Released at the end of the transaction.
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT pg_advisory_xact_lock(%s)', [SETUP_LOCK])
+            if User.objects.exists():
+                raise Conflict('The user already exists. Log in instead.')
+            user = User.objects.create_superuser(
+                serializer.validated_data['username'], password=serializer.validated_data['password'],
+            )
         return Response({'username': user.username}, status=201)
 
 
