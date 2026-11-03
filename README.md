@@ -16,6 +16,17 @@ docker compose up -d --build
   `npm run dev`. gunicorn no recarga solo: después de cambiar código de Python, corré
   `docker compose restart server`.
 
+## Estructura
+
+| Carpeta | Qué hay |
+|---|---|
+| `backend/` | Django: `pluto/` (settings y URLs), `server_core/` (modelos, `api/` con un módulo por recurso, `tests/`) y `manage.py`. Los comandos de Django se corren desde acá |
+| `frontend/` | El front en React + TypeScript, con su `Dockerfile` y `nginx.conf` |
+| `plugins/` | Los plugins (`file_tracker`, `tinygs`) y su SDK. El server construye sus imágenes desde acá |
+| `services/` | `coord_transform` |
+| `mosquitto/` | La configuración del broker |
+| `docs/contracts/` | Los contratos entre el server, los plugins y las placas |
+
 ## Prueba de punta a punta
 
 `frontend/e2e/smoke.e2e.ts` usa Playwright para recorrer el primer arranque contra el

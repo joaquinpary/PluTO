@@ -16,7 +16,7 @@ services:
   server:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: backend/Dockerfile
     image: pluto/server:latest
     # gunicorn, not runserver: the front end polls every second while the
     # plugins ingest. Launching a plugin builds its image the first time and can
@@ -32,7 +32,8 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
-      - .:/app
+      - ./backend:/app
+      - ./plugins:/app/plugins
     restart: unless-stopped
     networks:
       - pluto-network
