@@ -1,6 +1,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, unwrap } from './client';
 import type { Plugin, PluginFilters } from './types';
+import type { BoardSettings } from '../lib/boardForm';
 
 /** GET /api/setup: whether the only user still has to be created (spec 3.4). */
 export function useSetupStatus() {
@@ -213,5 +214,23 @@ export function useLogs(source: LogSource, tail: number, autoRefresh: boolean) {
     refetchIntervalInBackground: false,
     // A 404 (no container) is shown at once; anything else is retried like every poll.
     ...POLL_RETRY,
+  });
+}
+
+// --- Boards (Task 17) ----------------------------------------------------------
+
+export function useBoard(deviceId: string) {
+  return useQuery({
+    queryKey: ['boards', 'detail', deviceId],
+    queryFn: async () => unwrap(await api.GET('/api/boards/{device_id}', { params: { path: { device_id: deviceId } } })),
+  });
+}
+
+export function useUpdateBoard(deviceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: BoardSettings) =>
+      unwrap(await api.PATCH('/api/boards/{device_id}', { params: { path: { device_id: deviceId } }, body })),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['boards'] }),
   });
 }
