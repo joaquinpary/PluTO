@@ -195,7 +195,7 @@ CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='', cast=Csv())
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'PluTO API',
-    'DESCRIPTION': 'Plugin ingestion and board binding. The prose contract is docs/contracts/ingest-api.md.',
+    'DESCRIPTION': 'Plugin ingestion and the front-end API. The prose contract is docs/contracts/ingest-api.md.',
     'VERSION': '1',
     'SERVE_INCLUDE_SCHEMA': False,
     # The live boards, the orders and the history share DispatchOrder.Reason: one name for all.
