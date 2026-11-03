@@ -76,6 +76,10 @@ async function refresh(): Promise<boolean> {
   }
 
   if (response.status === 401) {
+    // Another tab may have used the same token first and stored the next one:
+    // the session is still good, so try again with it.
+    const current = getRefresh();
+    if (current !== null && current !== token) return refresh();
     clearTokens(); // Expired or already used: only a new login helps.
     return false;
   }

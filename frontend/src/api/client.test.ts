@@ -13,6 +13,31 @@ function onlyFor(access: string) {
 }
 
 describe('api client', () => {
+  it('keeps the session when another tab rotated the refresh token first', async () => {
+    // Two tabs reopened together both refresh with r1: the one that loses gets
+    // a 401, but r2 is already in localStorage and the session is still good.
+    setTokens({ access: 'expired', refresh: 'r1' });
+    const used: string[] = [];
+    server.use(
+      http.post('/api/auth/token/refresh', async ({ request }) => {
+        const { refresh } = (await request.json()) as { refresh: string };
+        used.push(refresh);
+        if (refresh === 'r1') {
+          localStorage.setItem(REFRESH_KEY, 'r2'); // the other tab won
+          return HttpResponse.json({ detail: 'Token is blacklisted' }, { status: 401 });
+        }
+        return HttpResponse.json({ access: 'a3', refresh: 'r3' });
+      }),
+      http.get('/api/boards', onlyFor('a3')),
+    );
+
+    const { response } = await api.GET('/api/boards');
+
+    expect(response.status).toBe(200);
+    expect(used).toEqual(['r1', 'r2']);
+    expect(localStorage.getItem(REFRESH_KEY)).toBe('r3');
+  });
+
   it('sends the access token', async () => {
     setTokens({ access: 'a1', refresh: 'r1' });
     server.use(http.get('/api/boards', onlyFor('a1')));
