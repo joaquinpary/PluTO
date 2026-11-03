@@ -2,7 +2,7 @@ from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
-from . import api, api_account, api_boards, api_history, api_plugins
+from . import api, api_account, api_boards, api_history, api_logs, api_plugins
 
 urlpatterns = [
     # Plugin containers, with Plugin <token>.
@@ -43,6 +43,7 @@ urlpatterns = [
     path('plugin-data', api_history.PluginDataHistoryView.as_view(), name='api-plugin-data-history'),
     path('results/pointing-error', api_history.PointingErrorView.as_view(), name='api-results-pointing-error'),
     path('results/reception', api_history.ReceptionView.as_view(), name='api-results-reception'),
+    path('logs/<str:service>', api_logs.ServiceLogsView.as_view(), name='api-service-logs'),
     # The OpenAPI schema and its Swagger UI.
     path('schema', SpectacularAPIView.as_view(), name='api-schema'),
     path('docs', SpectacularSwaggerView.as_view(url_name='api-schema'), name='api-docs'),
