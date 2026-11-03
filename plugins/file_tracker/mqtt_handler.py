@@ -10,15 +10,16 @@ logger = logging.getLogger(__name__)
 
 
 class FileTrackerMQTTClient:
-    def __init__(self, broker_url, broker_port, input_topic, publish_topic, station: Station,
-                 username=None, password=None, bridge=None):
+    def __init__(self, broker_url, broker_port, input_topic, station: Station,
+                 username=None, password=None, bridge=None, antenna=None):
         self.broker_url = broker_url
         self.broker_port = broker_port
         self.input_topic = input_topic
-        self.publish_topic = publish_topic
         self.station = station
-        # pluto_sdk.BoardBridge, or None when no board is bound to the instance.
+        # pluto_sdk.BoardBridge and pluto_sdk.Antenna, or None when no board is
+        # bound to the instance.
         self.bridge = bridge
+        self.antenna = antenna
         self.last_upload_id = None
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
@@ -32,6 +33,19 @@ class FileTrackerMQTTClient:
         logger.info("Connecting to MQTT broker at %s:%s", self.broker_url, self.broker_port)
         self.client.connect(self.broker_url, self.broker_port, 60)
         self.client.loop_forever()
+
+    def stop(self):
+        """Leave the broker, which ends loop_forever and with it start()."""
+        self.client.disconnect()
+
+    def publish_to_board(self, topic, payload):
+        """Put one pointing batch or HOLD on the board's topic (coordinates-dto.md §2).
+
+        Called from the dispatcher's timer thread; paho's publish is safe there.
+        QoS 1, and never retained: a retained setpoint would be handed to the
+        board on every reconnect, aiming it at an instant that has passed.
+        """
+        self.client.publish(topic, payload, qos=1, retain=False)
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code.is_failure:
@@ -66,8 +80,8 @@ class FileTrackerMQTTClient:
         upload = FileUpload.model_validate_json(raw)
         if upload.upload_id == self.last_upload_id:
             # The broker hands the retained file back on every reconnection.
-            # Publishing it again would re-point the antenna mid-pass.
-            logger.info("Ignoring %s, already published", upload.upload_id)
+            # Pointing at it again would restart the antenna mid-pass.
+            logger.info("Ignoring %s, already sent to the antenna", upload.upload_id)
             return
         # Recorded before parsing, so a broken file is not retried every time
         # the connection drops.
@@ -77,8 +91,18 @@ class FileTrackerMQTTClient:
             upload.content, upload.coord_type.value, upload.coord_format.value,
             self.station, datetime.now(timezone.utc),
         )
-        result = client.publish(self.publish_topic, payload.model_dump_json(), qos=1)
+        if self.antenna is None:
+            # Parsed anyway, so a broken file still shows up in the log.
+            logger.warning(
+                "No board bound to this instance: %s points from %s parsed but not pointed at",
+                len(payload.coordinates), upload.filename or upload.upload_id,
+            )
+            return
+
+        # The antenna transforms, plans and publishes on its own thread: this
+        # is paho's network thread and must not wait on HTTP.
+        self.antenna.submit(payload.model_dump(mode="json"))
         logger.info(
-            "Published %s points from %s on %s (mid=%s)",
-            len(payload.coordinates), upload.filename or upload.upload_id, self.publish_topic, result.mid,
+            "Sent %s points from %s to the antenna",
+            len(payload.coordinates), upload.filename or upload.upload_id,
         )

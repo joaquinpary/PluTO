@@ -165,18 +165,8 @@ class Rotor(models.Model):
     def __str__(self):
         return self.name or self.device_id
 
-    def azimuth_in_window(self, az_deg):
-        """Whether az_deg falls inside the configured azimuth window."""
-        if self.min_azimuth_deg is None or self.max_azimuth_deg is None:
-            return True
-        if self.min_azimuth_deg <= self.max_azimuth_deg:
-            return self.min_azimuth_deg <= az_deg <= self.max_azimuth_deg
-        # The window wraps through north: 300..60 means 300..360 plus 0..60.
-        return az_deg >= self.min_azimuth_deg or az_deg <= self.max_azimuth_deg
-
-    def point_in_bounds(self, az_deg, el_deg):
-        """Whether the dispatcher may forward this point to the board (RF-30.2)."""
-        return el_deg >= self.min_elevation_deg and self.azimuth_in_window(az_deg)
+    # The limits are applied by the plugin driving the board, which gets them
+    # from GET /api/plugin/rotor (pluto_sdk.pointing.RotorLimits).
 
 class RotorState(models.Model):
     """One state document from device/<device_id>/state (device-state.md §3)."""
@@ -212,7 +202,9 @@ class RotorState(models.Model):
         return f'{self.rotor_id} {self.mode} #{self.pk}'
 
 class DispatchOrder(models.Model):
-    """One row per message mqtt_dispatch published on device/<device_id>/coordinates/polar.
+    """One row per message a plugin published on device/<device_id>/coordinates/polar.
+
+    The plugin reports each one through POST /api/dispatch-orders.
 
     Consecutive batches overlap on purpose (coordinates-dto.md §10), so a given
     setpoint shows up in up to three rows. That duplication is the point: this is

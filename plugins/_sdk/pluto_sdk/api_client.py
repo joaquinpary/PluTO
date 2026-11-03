@@ -23,6 +23,12 @@ import urllib.request
 
 logger = logging.getLogger(__name__)
 
+
+class ApiError(Exception):
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
+
 DONE = 'done'
 DROP = 'drop'
 RETRY = 'retry'
@@ -88,6 +94,32 @@ class ApiClient:
         """Queue a board report for POST /api/device/<status|state>, as the board sent it."""
         content_type = 'text/plain' if leaf == 'status' else 'application/json'
         return self._enqueue(f'device/{leaf}', raw, content_type, f'device {leaf}')
+
+    def send_dispatch_order(self, order):
+        """Queue one order the plugin put on its board's topic, for POST /api/dispatch-orders."""
+        return self._enqueue(
+            'dispatch-orders',
+            json.dumps(order).encode('utf-8'),
+            'application/json',
+            f'order {order["kind"]} t0_ms={order["t0_ms"]}',
+        )
+
+    def get_rotor(self):
+        """GET /api/plugin/rotor: the bound board and its limits (a dict), or None.
+
+        Not queued: the caller needs the answer to go on, and it runs on the
+        antenna's worker thread, never on an MQTT callback. Raises ApiError.
+        """
+        request = urllib.request.Request(
+            self.base_url + 'plugin/rotor', headers={'Authorization': f'Plugin {self.token}'},
+        )
+        try:
+            with self._urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            raise ApiError(f'GET plugin/rotor answered {exc.code}', status=exc.code) from None
+        except (urllib.error.URLError, OSError) as exc:
+            raise ApiError(f'GET plugin/rotor did not reach the server: {exc}') from None
 
     def _enqueue(self, path, body, content_type, label):
         try:

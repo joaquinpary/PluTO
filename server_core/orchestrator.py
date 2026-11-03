@@ -123,8 +123,6 @@ class PluginOrchestrator:
 
         image_name = image_result
 
-        mqtt_topic = f"plugin/{instance_id}/coordinates/raw"
-
         # The same broker settings the server uses. Without the credentials a
         # plugin falls back to its built-in defaults, and the broker refuses
         # anonymous clients, so changing MQTT_PASSWORD silently cut them all off.
@@ -134,7 +132,6 @@ class PluginOrchestrator:
             "MQTT_BROKER_PORT": str(mqtt_config["PORT"]),
             "MQTT_USERNAME": mqtt_config["USERNAME"],
             "MQTT_PASSWORD": mqtt_config["PASSWORD"],
-            "MQTT_PUBLISH_TOPIC": mqtt_topic,
             "INSTANCE_ID": str(instance_id),
             "STATION_COORDINATES": json.dumps(normalized_station),
             "STATION_LAT": str(normalized_station["lat"]),
@@ -167,7 +164,7 @@ class PluginOrchestrator:
                 detach=True,
                 restart_policy={"Name": "on-failure", "MaximumRetryCount": 3} 
             )
-            logger.info(f"Success: {container_name} started and publishing to {mqtt_topic}")
+            logger.info(f"Success: {container_name} started")
             return True, container.id
             
         except docker.errors.APIError as e:

@@ -1,7 +1,7 @@
 """Encoder for the binary pointing payload sent to the ESP32.
 
 The format is defined in docs/contracts/coordinates-dto.md; section numbers
-below refer to that document. Everything here is pure: no MQTT and no database,
+below refer to that document. Everything here is pure: no MQTT and no network,
 so the dispatcher that publishes on device/<device_id>/coordinates/polar only
 has to call it.
 """

@@ -1,10 +1,11 @@
 import json
 import logging
 import os
+import signal
 import sys
 
 from mqtt_handler import TinyGSMQTTClient
-from pluto_sdk import ConfigurationError, from_environment
+from pluto_sdk import ConfigurationError, antenna_from_environment, from_environment
 from tle import TleCache
 from tracker import Tracker
 
@@ -67,22 +68,12 @@ def main():
     plugin_id = (os.environ.get("PLUGIN_ID") or os.environ.get("INSTANCE_ID", "")).strip()
     plugin_type = os.environ.get("PLUGIN_TYPE", "tinygs")
     topic_prefix = os.environ.get("TINYGS_TOPIC_PREFIX", "").strip() or "pluto"
-    # Every plugin gets plugin/<uuid>/coordinates/raw from the orchestrator:
-    # the math engine is always in the path, even for a pass that is already
-    # in az/el.
-    coordinates_topic = os.environ.get("MQTT_PUBLISH_TOPIC", "").strip()
 
     if not device_id:
         # Exiting instead of falling back to a wildcard: a misconfigured plugin
         # must fail visibly, not silently listen to every device on the bus.
         logger.error("TINYGS_DEVICE is required and was not provided.")
         return 1
-
-    if not coordinates_topic:
-        if not plugin_id:
-            logger.error("Either PLUGIN_ID/INSTANCE_ID or MQTT_PUBLISH_TOPIC is required.")
-            return 1
-        coordinates_topic = f"plugin/{plugin_id}/coordinates/raw"
 
     try:
         min_elevation_deg = env_number("MIN_ELEVATION_DEG", 10.0)
@@ -114,27 +105,48 @@ def main():
             password=broker_pass,
             topic_prefix=topic_prefix,
         )
-        tracker = Tracker(
-            station=build_station_from_env(),
-            cache=TleCache(ttl_seconds=tle_ttl_hours * 3600),
-            publish=mqtt_client.publish_coordinates,
-            topic=coordinates_topic,
-            min_elevation_deg=min_elevation_deg,
-            lookahead_minutes=lookahead_minutes,
-            sample_seconds=sample_seconds,
-        )
-        mqtt_client.tracker = tracker
-        tracker.start()
-        logger.info(
-            "Passes above %s deg starting within %s min go to %s",
-            min_elevation_deg, lookahead_minutes, coordinates_topic,
-        )
+        antenna = antenna_from_environment(api, mqtt_client.publish_to_board)
+        if antenna is None:
+            # Following the satellite only serves to point a board: without one
+            # the plugin relays the station's data and nothing else.
+            logger.info("No board bound to this instance: relaying the station's data only")
+        else:
+            tracker = Tracker(
+                station=build_station_from_env(),
+                cache=TleCache(ttl_seconds=tle_ttl_hours * 3600),
+                submit=antenna.submit,
+                min_elevation_deg=min_elevation_deg,
+                lookahead_minutes=lookahead_minutes,
+                sample_seconds=sample_seconds,
+            )
+            mqtt_client.tracker = tracker
+            tracker.start()
+            logger.info(
+                "Pointing board %s at passes above %s deg starting within %s min",
+                bridge.device_id, min_elevation_deg, lookahead_minutes,
+            )
+
+        def shutdown(_signum, _frame):
+            # docker stop sends SIGTERM. Holding the antenna before leaving the
+            # broker is what makes stopping the plugin stop the pass in progress.
+            logger.info("Signal received, shutting down...")
+            if antenna is not None:
+                antenna.stop()
+            mqtt_client.stop()
+
+        signal.signal(signal.SIGTERM, shutdown)
+        signal.signal(signal.SIGINT, shutdown)
+
         mqtt_client.start()
-    except KeyboardInterrupt:
-        logger.info("Shutting down tinygs subscriber...")
+    except ConfigurationError as exc:
+        logger.error("%s", exc)
+        return 1
     except Exception as exc:
         logger.error("An error occurred: %s", exc, exc_info=True)
         return 1
+    finally:
+        # Gives the queue a moment to report the last orders, the HOLD among them.
+        api.stop(timeout=3)
 
     return 0
 

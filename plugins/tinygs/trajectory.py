@@ -86,7 +86,7 @@ def next_pass(tle, station, now, min_elevation_deg=10.0, lookahead_minutes=20, s
 
 
 def build_raw_payload(station, points):
-    """The message for coordinates/raw: ENU + POLAR, which the engine forwards as is.
+    """The trajectory for POST /transform: ENU + POLAR, which the engine returns as is.
 
     Built by hand rather than with pydantic on purpose. This plugin only ever
     emits this one combination and validates no input, so a copy of models.py

@@ -1,4 +1,3 @@
-import json
 import threading
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -9,7 +8,6 @@ from tracker import Tracker, assigned_norad
 
 NOW = datetime(2026, 9, 22, 15, 0, 0, tzinfo=timezone.utc)
 STATION = {'lat': -31.4201, 'lon': -64.1888, 'alt': 470.0}
-TOPIC = 'plugin/3f2a-uuid/coordinates/raw'
 
 NOAA_19 = 33591
 ISS = 25544
@@ -61,9 +59,9 @@ class TrackerTests(unittest.TestCase):
         self.cache = MagicMock()
         self.cache.get.side_effect = lambda norad: Tle(f'SAT {norad}', '1 x', '2 x')
         self.compute = MagicMock(return_value=a_pass())
-        self.publish = MagicMock()
+        self.submit = MagicMock()
         self.tracker = Tracker(
-            station=STATION, cache=self.cache, publish=self.publish, topic=TOPIC,
+            station=STATION, cache=self.cache, submit=self.submit,
             min_elevation_deg=15.0, lookahead_minutes=25, sample_seconds=2,
             clock=self.clock, compute=self.compute,
         )
@@ -77,10 +75,8 @@ class TrackerTests(unittest.TestCase):
     def test_a_new_satellite_publishes_its_pass(self):
         self.assertTrue(self.deliver(tracking()))
 
-        self.publish.assert_called_once()
-        topic, payload = self.publish.call_args.args
-        self.assertEqual(topic, TOPIC)
-        document = json.loads(payload)
+        self.submit.assert_called_once()
+        (document,) = self.submit.call_args.args
         self.assertEqual((document['type'], document['coord_format']), ('ENU', 'POLAR'))
         self.assertEqual(len(document['coordinates']), 3)
 
@@ -97,13 +93,13 @@ class TrackerTests(unittest.TestCase):
         self.clock.now = NOW + timedelta(minutes=5)
 
         self.assertFalse(self.deliver(tracking()))
-        self.publish.assert_called_once()
+        self.submit.assert_called_once()
 
     def test_a_different_satellite_publishes_again(self):
         self.deliver(tracking())
 
         self.assertTrue(self.deliver(tracking(norad=ISS, satellite='ISS')))
-        self.assertEqual(self.publish.call_count, 2)
+        self.assertEqual(self.submit.call_count, 2)
 
     def test_the_same_satellite_publishes_again_once_its_pass_is_over(self):
         self.deliver(tracking())
@@ -111,21 +107,21 @@ class TrackerTests(unittest.TestCase):
         self.clock.now = a_pass()[-1][0] + timedelta(minutes=15)
 
         self.assertTrue(self.deliver(tracking()))
-        self.assertEqual(self.publish.call_count, 2)
+        self.assertEqual(self.submit.call_count, 2)
 
     def test_the_boot_placeholder_publishes_nothing(self):
         with self.assertLogs('tracker', level='INFO'):
             self.assertFalse(self.deliver(tracking(norad=46494, satellite='Waiting')))
 
         self.cache.get.assert_not_called()
-        self.publish.assert_not_called()
+        self.submit.assert_not_called()
 
     def test_no_pass_in_the_window_is_retried_on_the_next_message(self):
         self.compute.return_value = None
 
         with self.assertLogs('tracker', level='INFO'):
             self.assertFalse(self.deliver(tracking()))
-        self.publish.assert_not_called()
+        self.submit.assert_not_called()
 
         # Nothing was recorded, so the heartbeat tries again rather than being
         # taken for "already published".
@@ -145,7 +141,7 @@ class TrackerTests(unittest.TestCase):
         self.assertTrue(self.tracker.process(NOAA_19))
 
         self.assertFalse(self.tracker.process(NOAA_19))
-        self.publish.assert_called_once()
+        self.submit.assert_called_once()
 
 
 class WorkerThreadTests(unittest.TestCase):
@@ -154,7 +150,7 @@ class WorkerThreadTests(unittest.TestCase):
         cache = MagicMock()
         cache.get.side_effect = [OSError('celestrak unreachable'), Tle('ISS', '1 x', '2 x')]
         tracker = Tracker(
-            station=STATION, cache=cache, publish=lambda topic, payload: published.set(), topic=TOPIC,
+            station=STATION, cache=cache, submit=lambda raw: published.set(),
             clock=FakeClock(), compute=MagicMock(return_value=a_pass()),
         )
         tracker.start()

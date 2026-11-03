@@ -1,7 +1,7 @@
 """One-off publishes from the web process.
 
-The admin cannot share the long-lived client of mqtt_dispatch, which runs in
-its own container, so each publish opens its own short connection. That is fine for something a person triggers by hand.
+The web process keeps no MQTT connection of its own, so each publish opens a
+short one. That is fine for something a person triggers by hand.
 """
 import paho.mqtt.publish as publish
 from django.conf import settings

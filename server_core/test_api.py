@@ -572,7 +572,7 @@ class DispatchOrdersTests(TestCase):
         row = DispatchOrder.objects.get()
         self.assertEqual((row.rotor, row.plugin, row.kind), (self.rotor, self.plugin, 'BATCH'))
         self.assertEqual(row.points, [[0, 27000, 3000], [1000, 27050, 3010]])
-        # The instant the batch covers up to, as mqtt_dispatch records it.
+        # The instant the batch covers up to: t0_ms plus the last dt_ms.
         self.assertEqual(row.t_end_ms, 1789763401000)
 
     def test_a_list_is_stored_whole(self):

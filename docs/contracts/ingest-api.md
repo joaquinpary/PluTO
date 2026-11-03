@@ -110,13 +110,15 @@ en [`device-state.md`](device-state.md): `status` es el texto `online` u `offlin
 
 ## 5. Apuntamiento: `GET /api/plugin/rotor` y `POST /api/dispatch-orders`
 
-Lo que necesita un plugin para apuntar su placa sin pasar por `mqtt_dispatch`.
+Lo que necesita un plugin para apuntar su placa: el dispatcher vive en el plugin
+(`plugins/_sdk/pluto_sdk/dispatcher.py`), y el backend le da los límites y guarda lo que
+publica.
 
 ### `GET /api/plugin/rotor`
 
 La placa vinculada a la instancia y sus límites de apuntamiento, o `null` si no tiene.
 El plugin lo pide antes de planificar cada trayectoria, así que un cambio de límites se
-aplica desde la próxima, igual que con `mqtt_dispatch`.
+aplica desde la próxima trayectoria.
 
 ```json
 { "device_id": "a1b2c3d4e5f6", "min_elevation_deg": 10.0,
