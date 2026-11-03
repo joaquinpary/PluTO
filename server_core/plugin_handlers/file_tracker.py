@@ -2,6 +2,7 @@ import json
 import uuid
 
 from .base import BasePluginHandler
+from .fields import config_field
 
 
 _VALID_COORD_COMBINATIONS = {
@@ -46,6 +47,22 @@ def build_file_message(config, filename, content):
 
 
 class FileTrackerHandler(BasePluginHandler):
+    label = "Archivo de coordenadas"
+
+    # Not every pair makes sense: validate() keeps the five that do.
+    config_fields = (
+        config_field(
+            "coord_type", "Sistema de referencia", "choice", required=True,
+            choices=[["ECEF", "ECEF"], ["ECI", "ECI"], ["ENU", "ENU (local)"]],
+            help="El sistema en que están las coordenadas del archivo.",
+        ),
+        config_field(
+            "coord_format", "Formato", "choice", required=True,
+            choices=[["CARTESIAN", "Cartesianas"], ["GEO", "Geográficas"], ["POLAR", "Polares"]],
+            help="ECEF va con cartesianas o geográficas; ECI con cartesianas; ENU con polares o cartesianas.",
+        ),
+    )
+
     # It only publishes coordinates; it has no data of its own to store.
     allowed_message_types = ()
 
