@@ -7,3 +7,5 @@ __pycache__/
 
 *.md
 LICENSE
+# Built by its own image (frontend/Dockerfile).
+frontend/
