@@ -1,5 +1,5 @@
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import docker
 from django.conf import settings
@@ -82,3 +82,60 @@ class PluginOrchestratorTests(SimpleTestCase):
         kwargs = client.images.build.call_args.kwargs
         self.assertEqual(kwargs['path'], os.path.join(settings.BASE_DIR, 'plugins'))
         self.assertEqual(kwargs['dockerfile'], os.path.join('file_tracker', 'Dockerfile'))
+
+
+def fake_container(name, status='running', logs=b''):
+    """A container as containers.list(sparse=True) or containers.get hand it back."""
+    container = MagicMock()
+    container.attrs = {'Names': [f'/{name}']}
+    container.status = status
+    container.logs.return_value = logs
+    return container
+
+
+class DockerTestCase(SimpleTestCase):
+    """An orchestrator over a fake Docker client, self.client."""
+
+    def setUp(self):
+        patcher = patch('server_core.orchestrator.docker.DockerClient')
+        self.client = patcher.start().return_value
+        self.addCleanup(patcher.stop)
+        self.orchestrator = PluginOrchestrator()
+
+
+class ContainerStatusesTests(DockerTestCase):
+    def test_container_names_carry_the_type_and_the_instance(self):
+        self.assertEqual(self.orchestrator.container_name('file_tracker', 'uuid-1'), 'plugin-file-tracker-uuid-1')
+
+    def test_lists_every_plugin_container_in_a_single_call(self):
+        self.client.containers.list.return_value = [
+            fake_container('plugin-tinygs-uuid-1', 'running'),
+            fake_container('plugin-file-tracker-uuid-2', 'exited'),
+            fake_container('pluto-server-1', 'running'),
+        ]
+
+        statuses = self.orchestrator.container_statuses()
+
+        self.assertEqual(statuses, {'plugin-tinygs-uuid-1': 'running', 'plugin-file-tracker-uuid-2': 'exited'})
+        # sparse: the list already carries names and states, so nothing is inspected one by one.
+        self.client.containers.list.assert_called_once_with(all=True, sparse=True)
+        self.client.containers.get.assert_not_called()
+
+    def test_no_plugin_containers_is_an_empty_answer(self):
+        self.client.containers.list.return_value = []
+
+        self.assertEqual(self.orchestrator.container_statuses(), {})
+
+    def test_a_docker_error_is_unknown_not_empty(self):
+        self.client.containers.list.side_effect = docker.errors.APIError('boom')
+
+        with self.assertLogs('server_core.orchestrator', level='ERROR'):
+            self.assertIsNone(self.orchestrator.container_statuses())
+
+    def test_without_the_proxy_nothing_is_known(self):
+        self.client.ping.side_effect = docker.errors.DockerException('connection refused')
+
+        with self.assertLogs('server_core.orchestrator', level='ERROR'):
+            orchestrator = PluginOrchestrator()
+
+        self.assertIsNone(orchestrator.container_statuses())

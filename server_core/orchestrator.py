@@ -9,6 +9,12 @@ from .plugin_handlers import PLUGIN_HANDLERS
 
 logger = logging.getLogger(__name__)
 
+# Every plugin container is named plugin-<type>-<uuid> (container_name).
+PLUGIN_CONTAINER_PREFIX = "plugin-"
+
+# PluTO's own compose services whose logs the front end shows.
+LOG_SERVICES = ("server", "coord_transform")
+
 
 def _normalize_station_coordinates(station_coordinates):
     if isinstance(station_coordinates, dict):
@@ -50,9 +56,9 @@ class PluginOrchestrator:
             self.client = None
             logger.error(f"Fatal error: Could not connect to Docker Proxy. {e}")
 
-    def _container_name(self, plugin_type, instance_id):
+    def container_name(self, plugin_type, instance_id):
         format_type = plugin_type.replace("_", "-")
-        return f"plugin-{format_type}-{instance_id}"
+        return f"{PLUGIN_CONTAINER_PREFIX}{format_type}-{instance_id}"
 
     def _image_name(self, plugin_type):
         format_type = plugin_type.replace("_", "-")
@@ -116,7 +122,7 @@ class PluginOrchestrator:
         except ValueError as exc:
             return False, f"Error: {exc}"
 
-        container_name = self._container_name(plugin_type, instance_id)
+        container_name = self.container_name(plugin_type, instance_id)
         image_ok, image_result = self._build_image_if_needed(plugin_type)
         if not image_ok:
             return False, image_result
@@ -178,7 +184,7 @@ class PluginOrchestrator:
         if self.client is None:
             return False, "Cannot connect to Docker Proxy."
 
-        container_name = self._container_name(plugin_type, instance_id)
+        container_name = self.container_name(plugin_type, instance_id)
         try:
             container = self.client.containers.get(container_name)
             container.stop(timeout=5)
@@ -196,7 +202,7 @@ class PluginOrchestrator:
         if self.client is None:
             return False, "unknown"
 
-        container_name = self._container_name(plugin_type, instance_id)
+        container_name = self.container_name(plugin_type, instance_id)
         try:
             container = self.client.containers.get(container_name)
             return True, container.status
@@ -205,3 +211,27 @@ class PluginOrchestrator:
         except docker.errors.APIError as exc:
             logger.error(f"Error querying status for {container_name}: {exc}")
             return False, "unknown"
+
+    def container_statuses(self):
+        """The Docker status of every plugin container, by container name (KAN-50).
+
+        One request for the whole list instead of one per instance. None when
+        Docker cannot be asked, so a caller can tell "unknown" from "no container".
+        """
+        if self.client is None:
+            return None
+        try:
+            # sparse: the list answer already carries names and states; without
+            # it the SDK inspects every container, one request each.
+            containers = self.client.containers.list(all=True, sparse=True)
+        except docker.errors.APIError as exc:
+            logger.error(f"Error listing the plugin containers: {exc}")
+            return None
+
+        statuses = {}
+        for container in containers:
+            for name in container.attrs.get("Names") or []:
+                name = name.lstrip("/")
+                if name.startswith(PLUGIN_CONTAINER_PREFIX):
+                    statuses[name] = container.status
+        return statuses
