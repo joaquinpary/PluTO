@@ -65,7 +65,7 @@ class PluginOrchestrator:
         return f"pluto/plugin-{format_type}:latest"
 
     def _plugin_source_path(self, plugin_type):
-        return os.path.join(settings.BASE_DIR, "plugins", plugin_type)
+        return os.path.join(settings.PLUGINS_DIR, plugin_type)
 
     def _build_image_if_needed(self, plugin_type):
         image_name = self._image_name(plugin_type)

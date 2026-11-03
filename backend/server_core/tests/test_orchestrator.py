@@ -112,7 +112,7 @@ class PluginOrchestratorTests(SimpleTestCase):
         self.assertTrue(ok)
         self.assertEqual(image, 'pluto/plugin-file-tracker:latest')
         kwargs = client.images.build.call_args.kwargs
-        self.assertEqual(kwargs['path'], os.path.join(settings.BASE_DIR, 'plugins'))
+        self.assertEqual(kwargs['path'], str(settings.PLUGINS_DIR))
         self.assertEqual(kwargs['dockerfile'], os.path.join('file_tracker', 'Dockerfile'))
 
 

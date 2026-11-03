@@ -16,9 +16,9 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY backend/pluto/ ./pluto/
 COPY backend/server_core/ ./server_core/
-# The orchestrator builds the plugin images from here, which is why the build
-# context is the repo root and not backend/.
-COPY plugins/ ./plugins/
+# The orchestrator builds the plugin images from here (settings.PLUGINS_DIR),
+# which is why the build context is the repo root and not backend/.
+COPY plugins/ /plugins/
 COPY backend/manage.py ./
 
 EXPOSE 8000

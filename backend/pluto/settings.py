@@ -153,6 +153,10 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# The orchestrator builds the plugin images from here: plugins/ sits next to
+# backend/ in the repo, and next to /app in the server image.
+PLUGINS_DIR = BASE_DIR.parent / 'plugins'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
 
