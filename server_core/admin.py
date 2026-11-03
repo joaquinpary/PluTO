@@ -207,6 +207,16 @@ class RotorAdmin(admin.ModelAdmin):
                 ),
             },
         ),
+        (
+            'Location',
+            {
+                'fields': ('latitude_deg', 'longitude_deg', 'altitude_m'),
+                'description': (
+                    'Where the antenna stands. The plugins bound to this board compute '
+                    'their passes for it; without latitude and longitude, tinygs computes none.'
+                ),
+            },
+        ),
     ]
 
     def has_add_permission(self, request):

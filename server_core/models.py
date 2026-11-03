@@ -152,6 +152,25 @@ class Rotor(models.Model):
         validators=[MinValueValidator(0.0), MaxValueValidator(360.0)],
         help_text='End of the allowed azimuth window. A value below the start wraps through north, e.g. 300 to 60.',
     )
+    # Where the antenna stands, which a plugin that computes passes needs
+    # (STATION_COORDINATES). On the board and not on the instance: it belongs
+    # to the place, and every instance bound to the board shares it. Optional,
+    # because a board registers itself long before anybody measures it.
+    latitude_deg = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(-90.0), MaxValueValidator(90.0)],
+    )
+    longitude_deg = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(-180.0), MaxValueValidator(180.0)],
+    )
+    altitude_m = models.FloatField(
+        null=True,
+        blank=True,
+        help_text='Metres above sea level. Empty counts as 0.',
+    )
 
     class Meta:
         ordering = ['device_id']
@@ -161,9 +180,19 @@ class Rotor(models.Model):
         # Half a window says nothing: is 200 a floor or a ceiling?
         if (self.min_azimuth_deg is None) != (self.max_azimuth_deg is None):
             raise ValidationError('Set both azimuth limits, or leave both empty for no azimuth restriction.')
+        # Half a location is no place at all, and would silently mean none.
+        if (self.latitude_deg is None) != (self.longitude_deg is None):
+            raise ValidationError('Set both latitude and longitude, or leave both empty.')
 
     def __str__(self):
         return self.name or self.device_id
+
+    @property
+    def location(self):
+        """The station the plugins compute passes for, or None without latitude and longitude."""
+        if self.latitude_deg is None or self.longitude_deg is None:
+            return None
+        return {'lat': self.latitude_deg, 'lon': self.longitude_deg, 'alt': self.altitude_m or 0.0}
 
     # The limits are applied by the plugin driving the board, which gets them
     # from GET /api/plugin/rotor (pluto_sdk.pointing.RotorLimits).
