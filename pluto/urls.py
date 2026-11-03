@@ -15,37 +15,9 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.db import DatabaseError, connection
-from django.http import JsonResponse
 from django.urls import include, path
 
-
-def healthcheck(_request):
-    try:
-        # Opening the connection authenticates, so a credentials mismatch
-        # shows up here instead of silently reporting a healthy database.
-        with connection.cursor() as cursor:
-            cursor.execute('SELECT 1')
-    except DatabaseError:
-        return JsonResponse(
-            {
-                'status': 'degraded',
-                'service': 'pluto-backend',
-                'database': 'unreachable',
-            },
-            status=503,
-        )
-
-    return JsonResponse(
-        {
-            'status': 'ok',
-            'service': 'pluto-backend',
-            'database': 'ok',
-        }
-    )
-
 urlpatterns = [
-    path('', healthcheck, name='healthcheck'),
     path('admin/', admin.site.urls),
     path('api/', include('server_core.urls')),
 ]

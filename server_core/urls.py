@@ -2,7 +2,7 @@ from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
-from . import api
+from . import api, api_account
 
 urlpatterns = [
     # Plugin containers, with Plugin <token>.
@@ -11,10 +11,14 @@ urlpatterns = [
     path('device/state', api.DeviceStateView.as_view(), name='api-device-state'),
     path('plugin/rotor', api.PluginRotorView.as_view(), name='api-plugin-rotor'),
     path('dispatch-orders', api.DispatchOrdersView.as_view(), name='api-dispatch-orders'),
+    # Open to anyone: the healthcheck, and creating the first user.
+    path('health', api_account.HealthView.as_view(), name='api-health'),
+    path('setup', api_account.SetupView.as_view(), name='api-setup'),
     # The user's session: log in, refresh, log out (blacklists the refresh token).
     path('auth/token', TokenObtainPairView.as_view(), name='api-token'),
     path('auth/token/refresh', TokenRefreshView.as_view(), name='api-token-refresh'),
     path('auth/token/blacklist', TokenBlacklistView.as_view(), name='api-token-blacklist'),
+    path('auth/password', api_account.PasswordView.as_view(), name='api-password'),
     # The front end, with Bearer <jwt>.
     path('boards', api.BoardsView.as_view(), name='api-boards'),
     path('boards/scan', api.BoardScanView.as_view(), name='api-boards-scan'),

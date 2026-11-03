@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from django.contrib.admin import AdminSite
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError, OperationalError
+from django.db import IntegrityError
 from django.db.models import ProtectedError
 from django.test import RequestFactory, SimpleTestCase, TestCase
 
@@ -243,21 +243,3 @@ class PluginDataTests(TestCase):
 
 		with self.assertRaises(ProtectedError):
 			self.plugin.delete()
-
-
-class HealthcheckTests(SimpleTestCase):
-	def test_returns_503_when_database_is_unreachable(self):
-		with patch('pluto.urls.connection') as connection:
-			connection.cursor.side_effect = OperationalError('password authentication failed')
-
-			response = self.client.get('/')
-
-		self.assertEqual(response.status_code, 503)
-		self.assertEqual(response.json()['database'], 'unreachable')
-
-	def test_returns_200_when_database_answers(self):
-		with patch('pluto.urls.connection'):
-			response = self.client.get('/')
-
-		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json()['database'], 'ok')

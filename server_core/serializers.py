@@ -4,6 +4,9 @@ The envelope serializers only describe the payload for the OpenAPI schema: the
 envelope is deliberately tolerant, and ingest.envelope_fields is what decides
 which of its keys reach a row.
 """
+from django.contrib.auth import get_user_model, password_validation
+from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .device_state import DEVICE_ID_RE
@@ -118,3 +121,53 @@ class DispatchOrderSerializer(serializers.Serializer):
         elif not attrs['points']:
             raise serializers.ValidationError('A BATCH needs at least one point.')
         return attrs
+
+
+# --- Account -----------------------------------------------------------------
+
+class HealthSerializer(serializers.Serializer):
+    status = serializers.CharField(help_text='ok, or degraded when the database does not answer.')
+    service = serializers.CharField()
+    database = serializers.CharField(help_text='ok or unreachable.')
+
+
+class SetupStatusSerializer(serializers.Serializer):
+    needs_setup = serializers.BooleanField(help_text='True until the first user is created.')
+
+
+def _password_errors(password, user):
+    """What AUTH_PASSWORD_VALIDATORS say about this password, or []."""
+    try:
+        password_validation.validate_password(password, user=user)
+    except DjangoValidationError as exc:
+        return list(exc.messages)
+    return []
+
+
+class SetupSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150, validators=[UnicodeUsernameValidator()])
+    password = serializers.CharField(write_only=True, trim_whitespace=False, style={'input_type': 'password'})
+
+    def validate(self, attrs):
+        # Against the user about to exist, so a password that repeats the
+        # username is caught too.
+        errors = _password_errors(attrs['password'], get_user_model()(username=attrs['username']))
+        if errors:
+            raise serializers.ValidationError({'password': errors})
+        return attrs
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True, trim_whitespace=False, style={'input_type': 'password'})
+    new_password = serializers.CharField(write_only=True, trim_whitespace=False, style={'input_type': 'password'})
+
+    def validate_current_password(self, value):
+        if not self.context['request'].user.check_password(value):
+            raise serializers.ValidationError('The current password is not correct.')
+        return value
+
+    def validate_new_password(self, value):
+        errors = _password_errors(value, self.context['request'].user)
+        if errors:
+            raise serializers.ValidationError(errors)
+        return value
