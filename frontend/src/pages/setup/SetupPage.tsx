@@ -1,10 +1,11 @@
-import { Alert, Button, Center, Paper, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Button, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { login, useHasSession } from '../../api/auth';
 import { api, fieldErrors } from '../../api/client';
 import { useSetupStatus } from '../../api/queries';
+import { AuthCard } from '../../components/AuthCard';
 
 /** First start: creates the only user (spec 3.4) and logs in with it. */
 export function SetupPage() {
@@ -49,45 +50,43 @@ export function SetupPage() {
   }
 
   return (
-    <Center mih="100vh" p="md">
-      <Paper withBorder p="lg" w={360} maw="100%">
-        <form onSubmit={submit}>
-          <Stack>
-            <Title order={2}>Crear usuario</Title>
-            <Text size="sm" c="dimmed">
-              PluTO todavía no tiene usuario. El que crees ahora es el único.
-            </Text>
-            <TextInput
-              label="Usuario"
-              autoComplete="username"
-              required
-              value={username}
-              onChange={(event) => setUsername(event.currentTarget.value)}
-              error={errors.username}
-            />
-            <PasswordInput
-              label="Contraseña"
-              autoComplete="new-password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.currentTarget.value)}
-              error={errors.password}
-            />
-            <PasswordInput
-              label="Confirmación"
-              autoComplete="new-password"
-              required
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.currentTarget.value)}
-              error={errors.confirmation}
-            />
-            {errors.detail && <Alert color="red">{errors.detail}</Alert>}
-            <Button type="submit" loading={busy}>
-              Crear usuario
-            </Button>
-          </Stack>
-        </form>
-      </Paper>
-    </Center>
+    <AuthCard>
+      <form onSubmit={submit}>
+        <Stack>
+          <Title order={4}>Crear usuario</Title>
+          <Text size="sm" c="dimmed">
+            PluTO todavía no tiene usuario. El que crees ahora es el único.
+          </Text>
+          <TextInput
+            label="Usuario"
+            autoComplete="username"
+            required
+            value={username}
+            onChange={(event) => setUsername(event.currentTarget.value)}
+            error={errors.username}
+          />
+          <PasswordInput
+            label="Contraseña"
+            autoComplete="new-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.currentTarget.value)}
+            error={errors.password}
+          />
+          <PasswordInput
+            label="Confirmación"
+            autoComplete="new-password"
+            required
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.currentTarget.value)}
+            error={errors.confirmation}
+          />
+          {errors.detail && <Alert color="red">{errors.detail}</Alert>}
+          <Button type="submit" loading={busy}>
+            Crear usuario
+          </Button>
+        </Stack>
+      </form>
+    </AuthCard>
   );
 }

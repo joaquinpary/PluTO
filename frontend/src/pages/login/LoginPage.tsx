@@ -1,8 +1,9 @@
-import { Alert, Button, Center, Paper, PasswordInput, Stack, TextInput, Title } from '@mantine/core';
+import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { login } from '../../api/auth';
 import { useSetupStatus } from '../../api/queries';
+import { AuthCard } from '../../components/AuthCard';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -31,32 +32,29 @@ export function LoginPage() {
   }
 
   return (
-    <Center mih="100vh" p="md">
-      <Paper withBorder p="lg" w={360} maw="100%">
-        <form onSubmit={submit}>
-          <Stack>
-            <Title order={2}>PluTO</Title>
-            <TextInput
-              label="Usuario"
-              autoComplete="username"
-              required
-              value={username}
-              onChange={(event) => setUsername(event.currentTarget.value)}
-            />
-            <PasswordInput
-              label="Contraseña"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.currentTarget.value)}
-            />
-            {error && <Alert color="red">{error}</Alert>}
-            <Button type="submit" loading={busy}>
-              Entrar
-            </Button>
-          </Stack>
-        </form>
-      </Paper>
-    </Center>
+    <AuthCard>
+      <form onSubmit={submit}>
+        <Stack>
+          <TextInput
+            label="Usuario"
+            autoComplete="username"
+            required
+            value={username}
+            onChange={(event) => setUsername(event.currentTarget.value)}
+          />
+          <PasswordInput
+            label="Contraseña"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.currentTarget.value)}
+          />
+          {error && <Alert color="red">{error}</Alert>}
+          <Button type="submit" loading={busy}>
+            Entrar
+          </Button>
+        </Stack>
+      </form>
+    </AuthCard>
   );
 }

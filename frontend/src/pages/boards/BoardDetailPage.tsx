@@ -109,7 +109,7 @@ export function BoardDetailPage() {
           </Text>
         </div>
         <Group gap="xs">
-          <Badge variant="light" color={data.online ? 'green' : 'gray'}>
+          <Badge variant="dot" color={data.online ? 'green' : 'gray'}>
             {data.online ? 'online' : 'offline'}
           </Badge>
           <Button component={Link} to={`/history?board=${data.device_id}`} variant="default">

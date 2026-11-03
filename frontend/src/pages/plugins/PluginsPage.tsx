@@ -1,10 +1,11 @@
-import { Anchor, Button, Group, NativeSelect, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Anchor, Button, Group, NativeSelect, Stack, Table, TextInput, Title } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePluginTypes, usePlugins } from '../../api/queries';
 import type { Plugin } from '../../api/types';
 import { ApiErrorAlert } from '../../components/ApiErrorAlert';
+import { EmptyState } from '../../components/EmptyState';
 import { PLUGIN_STATUS_OPTIONS, PluginStatusBadge, parseStatus } from '../../components/PluginStatusBadge';
 import { formatDateTime } from '../../lib/format';
 import { usePluginCommands } from './usePluginCommands';
@@ -74,7 +75,7 @@ export function PluginsPage() {
       </Group>
 
       <ApiErrorAlert error={plugins.error} title="No se pudieron cargar las instancias" />
-      {plugins.data?.length === 0 && <Text c="dimmed">No hay instancias con esos filtros.</Text>}
+      {plugins.data?.length === 0 && <EmptyState icon="cpu">No hay instancias con esos filtros.</EmptyState>}
       {plugins.data && plugins.data.length > 0 && (
         <Table.ScrollContainer minWidth={760}>
           <Table striped highlightOnHover>

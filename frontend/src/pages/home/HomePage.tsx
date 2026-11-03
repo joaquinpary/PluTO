@@ -1,7 +1,8 @@
-import { Alert, Anchor, Card, Center, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Card, Center, Loader, SimpleGrid, Stack, Title } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { useBoardsLive, usePlugins, useTracks } from '../../api/queries';
 import { BoardCard } from '../../components/BoardCard';
+import { EmptyState } from '../../components/EmptyState';
 import { SkyPlot, type SkyAntenna } from '../../components/SkyPlot';
 import { alertsFor } from '../../lib/alerts';
 import { useNow } from '../../lib/useNow';
@@ -19,7 +20,14 @@ export function HomePage() {
     // Where it actually points when the board measures it, else where it was told to.
     const position = board.state?.meas ?? board.state;
     if (position?.az_cdeg == null || position.el_cdeg == null) return [];
-    return [{ id: board.device_id, label: board.name || board.device_id, az_cdeg: position.az_cdeg, el_cdeg: position.el_cdeg }];
+    return [
+      {
+        id: board.device_id,
+        label: board.name || board.device_id,
+        az_cdeg: position.az_cdeg,
+        el_cdeg: position.el_cdeg,
+      },
+    ];
   });
 
   return (
@@ -44,13 +52,13 @@ export function HomePage() {
           </Center>
         )
       ) : boards.length === 0 ? (
-        <Text c="dimmed">
+        <EmptyState icon="radio">
           Todavía no hay placas. Buscalas en{' '}
           <Anchor component={Link} to="/boards">
             Placas
           </Anchor>
           .
-        </Text>
+        </EmptyState>
       ) : (
         <>
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
@@ -58,7 +66,7 @@ export function HomePage() {
               <BoardCard key={board.device_id} board={board} now={now} />
             ))}
           </SimpleGrid>
-          <Card withBorder>
+          <Card>
             <Title order={4} mb="sm">
               Cielo
             </Title>

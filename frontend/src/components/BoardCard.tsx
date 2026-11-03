@@ -14,10 +14,12 @@ const STATUS: Record<BoardStatus, { color: string; label: string }> = {
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <Text size="xs" c="dimmed">
+      <Text size="xs" c="dimmed" tt="uppercase" fw={600} lts={0.4}>
         {label}
       </Text>
-      <Text size="sm">{children}</Text>
+      <Text size="sm" fw={500}>
+        {children}
+      </Text>
     </div>
   );
 }
@@ -28,16 +30,20 @@ export function BoardCard({ board, now }: { board: BoardLive; now: number }) {
   const { state, running_plugin: plugin, satellite } = board;
 
   return (
-    <Card withBorder padding="md">
+    <Card padding="md">
       <Group justify="space-between" mb="sm">
-        <Anchor component={Link} to={`/boards/${board.device_id}`} fw={600}>
+        <Anchor component={Link} to={`/boards/${board.device_id}`} fw={700} size="lg">
           {board.name || board.device_id}
         </Anchor>
-        <Badge color={status.color}>{status.label}</Badge>
+        <Badge variant="dot" color={status.color}>
+          {status.label}
+        </Badge>
       </Group>
 
       <SimpleGrid cols={2} spacing="xs">
-        <Field label="Último dato">{board.last_state_at ? formatAge(board.last_state_at, now) : 'ninguno todavía'}</Field>
+        <Field label="Último dato">
+          {board.last_state_at ? formatAge(board.last_state_at, now) : 'ninguno todavía'}
+        </Field>
         <Field label="Instancia">
           {plugin ? (
             <Anchor component={Link} to={`/plugins/${plugin.plugin_uuid}`}>

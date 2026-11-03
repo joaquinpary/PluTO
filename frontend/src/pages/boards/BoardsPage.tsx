@@ -1,7 +1,8 @@
-import { Alert, Anchor, Badge, Button, Code, Group, Stack, Table, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Code, Group, Stack, Table, Title } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { useBoards, useScanBoards } from '../../api/queries';
 import { ApiErrorAlert } from '../../components/ApiErrorAlert';
+import { EmptyState } from '../../components/EmptyState';
 import { formatDateTime } from '../../lib/format';
 import { notifySuccess } from '../../lib/notify';
 import { scanErrorMessage, scanSummary } from '../../lib/scan';
@@ -30,7 +31,7 @@ export function BoardsPage() {
       {scan.isError && <Alert color="red">{scanErrorMessage(scan.error)}</Alert>}
       <ApiErrorAlert error={boards.error} title="No se pudieron cargar las placas" />
       {boards.data?.length === 0 && (
-        <Text c="dimmed">Todavía no hay placas registradas. Encendé una placa y tocá «Buscar placas».</Text>
+        <EmptyState icon="radio">Todavía no hay placas registradas. Encendé una placa y tocá «Buscar placas».</EmptyState>
       )}
       {boards.data && boards.data.length > 0 && (
         <Table.ScrollContainer minWidth={640}>
@@ -56,7 +57,7 @@ export function BoardsPage() {
                     <Code>{board.device_id}</Code>
                   </Table.Td>
                   <Table.Td>
-                    <Badge variant="light" color={board.online ? 'green' : 'gray'}>
+                    <Badge variant="dot" color={board.online ? 'green' : 'gray'}>
                       {board.online ? 'online' : 'offline'}
                     </Badge>
                   </Table.Td>

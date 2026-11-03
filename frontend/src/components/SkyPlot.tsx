@@ -24,7 +24,7 @@ export function SkyPlot({ antennas, tracks }: { antennas: SkyAntenna[]; tracks: 
   const line = 'var(--mantine-color-dimmed)';
 
   return (
-    <svg viewBox="-115 -115 230 230" width="100%" style={{ maxWidth: 360 }} role="img" aria-label="Gráfico del cielo">
+    <svg viewBox="-115 -115 230 230" width="100%" style={{ maxWidth: 360, display: 'block', margin: '0 auto' }} role="img" aria-label="Gráfico del cielo">
       {[0, 30, 60].map((el) => (
         <circle key={el} r={(R * (90 - el)) / 90} fill="none" stroke={line} strokeWidth={0.5} />
       ))}

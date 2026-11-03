@@ -20,7 +20,7 @@ export function statusLabel(status: string): string {
 
 export function PluginStatusBadge({ status }: { status: string }) {
   return (
-    <Badge variant="light" color={COLORS[status] ?? 'gray'}>
+    <Badge variant="dot" color={COLORS[status] ?? 'gray'}>
       {statusLabel(status)}
     </Badge>
   );
