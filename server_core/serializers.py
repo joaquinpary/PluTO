@@ -14,9 +14,11 @@ from rest_framework import serializers
 from rest_framework.settings import api_settings
 
 from .device_state import DEVICE_ID_RE, measured_position, tracking_error
-from .models import DispatchOrder, PluginInstance, Rotor, RotorState
+from .models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
+from .payloads import payload_value
 from .plugin_handlers import PLUGIN_HANDLERS, get_handler
 from .plugin_handlers.fields import apply_defaults, config_errors
+from .plugin_handlers.tinygs import satellite_from_tracking
 
 
 class EnvelopeSerializer(serializers.Serializer):
@@ -433,3 +435,61 @@ class SeriesPointSerializer(serializers.Serializer):
 
 class SeriesSerializer(serializers.Serializer):
     points = SeriesPointSerializer(many=True)
+
+
+class OrdersQuerySerializer(RangeQuerySerializer):
+    board = serializers.RegexField(DEVICE_ID_RE, required=False, help_text='device_id of the board.')
+    kind = serializers.ChoiceField(DispatchOrder.Kind.choices, required=False)
+    reason = serializers.ChoiceField(DispatchOrder.Reason.choices, required=False)
+
+
+class PluginDataQuerySerializer(RangeQuerySerializer):
+    plugin = serializers.UUIDField(required=False, help_text='plugin_uuid of the instance.')
+    type = serializers.CharField(required=False, max_length=32, help_text='message_type, e.g. rx or tracking.')
+
+
+class OrderRowSerializer(serializers.ModelSerializer):
+    board = serializers.SlugRelatedField(source='rotor', slug_field='device_id', read_only=True)
+    plugin = serializers.SlugRelatedField(slug_field='plugin_uuid', read_only=True)
+    point_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DispatchOrder
+        fields = ['id', 'board', 'plugin', 'kind', 'reason', 't0_ms', 't_end_ms', 't_sent_ms',
+                  'point_count', 'created_at']
+
+    def get_point_count(self, order) -> int:
+        return len(order.points)
+
+
+class PluginDataRowSerializer(serializers.ModelSerializer):
+    """A stored message with the fields worth a column pulled out of its payload.
+
+    The names are the ones the tinyGS fork sends (MQTT_Pluto::publishRx and
+    publishTracking), and satellite has the shape of GET /api/boards/live. Any
+    other plugin type, or a message without them, leaves those columns empty
+    and keeps the whole payload.
+    """
+    plugin = serializers.SlugRelatedField(slug_field='plugin_uuid', read_only=True)
+    rssi = serializers.SerializerMethodField()
+    snr = serializers.SerializerMethodField()
+    crc_error = serializers.SerializerMethodField()
+    satellite = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PluginData
+        fields = ['id', 'plugin', 'message_type', 'device', 'received_at', 'created_at',
+                  'rssi', 'snr', 'crc_error', 'satellite', 'payload']
+
+    def get_rssi(self, row) -> float | None:
+        return payload_value(row.payload, 'rssi', (int, float))
+
+    def get_snr(self, row) -> float | None:
+        return payload_value(row.payload, 'snr', (int, float))
+
+    def get_crc_error(self, row) -> bool | None:
+        return payload_value(row.payload, 'crc_error', bool)
+
+    @extend_schema_field(SatelliteSerializer(allow_null=True))
+    def get_satellite(self, row):
+        return satellite_from_tracking(row.payload)

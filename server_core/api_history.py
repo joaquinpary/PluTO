@@ -9,10 +9,19 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .downsample import downsample
-from .models import Rotor, RotorState
+from .models import DispatchOrder, PluginData, Rotor, RotorState
 from .pagination import TimeCursorPagination
 from .renderers import CSVRenderer
-from .serializers import RangeQuerySerializer, SeriesQuerySerializer, SeriesSerializer, StateRowSerializer
+from .serializers import (
+    OrderRowSerializer,
+    OrdersQuerySerializer,
+    PluginDataQuerySerializer,
+    PluginDataRowSerializer,
+    RangeQuerySerializer,
+    SeriesQuerySerializer,
+    SeriesSerializer,
+    StateRowSerializer,
+)
 
 
 def _rotor(device_id):
@@ -109,3 +118,37 @@ class BoardStatesSeriesView(APIView):
         points = downsample(rows, 't', params['max_points'],
                             start=bounds['start'], end=bounds['end'], count=bounds['count'])
         return Response(SeriesSerializer({'points': points}).data)
+
+
+@extend_schema_view(get=extend_schema(
+    summary='Orders the dispatcher sent to the boards',
+    description='Paginated by a cursor, newest first. `?format=csv` returns every row of the range, oldest first.',
+    parameters=[OrdersQuerySerializer],
+))
+class OrdersView(HistoryListView):
+    serializer_class = OrderRowSerializer
+    query_serializer = OrdersQuerySerializer
+    lookups = {'board': 'rotor__device_id', 'kind': 'kind', 'reason': 'reason'}
+    csv_name = 'dispatch-orders'
+
+    def base_queryset(self):
+        return DispatchOrder.objects.select_related('rotor', 'plugin')
+
+
+@extend_schema_view(get=extend_schema(
+    summary='Data the plugins sent',
+    description=(
+        'rssi, snr, crc_error and satellite come out of the payload when it has them, '
+        'and are null otherwise. Paginated by a cursor, newest first. `?format=csv` returns '
+        'every row of the range, oldest first.'
+    ),
+    parameters=[PluginDataQuerySerializer],
+))
+class PluginDataHistoryView(HistoryListView):
+    serializer_class = PluginDataRowSerializer
+    query_serializer = PluginDataQuerySerializer
+    lookups = {'plugin': 'plugin__plugin_uuid', 'type': 'message_type'}
+    csv_name = 'plugin-data'
+
+    def base_queryset(self):
+        return PluginData.objects.select_related('plugin')

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from .downsample import downsample
-from .models import Rotor, RotorState
+from .models import DispatchOrder, PluginData, PluginInstance, Rotor, RotorState
 from .test_api import DEVICE_ID, OTHER_DEVICE_ID, FrontTestCase
 
 T0 = datetime(2026, 10, 1, tzinfo=timezone.utc)
@@ -139,3 +139,158 @@ class LongRangeTests(FrontTestCase):
         # A list would hold the 86 400 rows at once; the iterator hands them over one chunk at a time.
         self.assertNotIsInstance(rows, (list, tuple))
         self.assertEqual(thin.call_args.kwargs['count'], DAY)
+
+
+class DispatchOrdersTests(FrontTestCase):
+    def setUp(self):
+        super().setUp()
+        self.rotor = Rotor.objects.create(device_id=DEVICE_ID)
+        self.other = Rotor.objects.create(device_id=OTHER_DEVICE_ID)
+        self.plugin = PluginInstance.objects.create(name='tinygs-1', plugin_type='tinygs')
+
+    def order(self, rotor, seconds, kind=DispatchOrder.Kind.BATCH, reason='', points=()):
+        return DispatchOrder.objects.create(
+            rotor=rotor, plugin=self.plugin, kind=kind, reason=reason,
+            t0_ms=1000, t_sent_ms=900, t_end_ms=1000, points=list(points), created_at=at(seconds),
+        )
+
+    def test_lists_the_orders_of_a_board_newest_first(self):
+        batch = self.order(self.rotor, 0, points=[[0, 100, 200], [500, 110, 210], [1000, 120, 220]])
+        hold = self.order(self.rotor, 1, kind=DispatchOrder.Kind.HOLD, reason=DispatchOrder.Reason.LIMITS)
+        self.order(self.other, 2)
+
+        rows = self.client.get('/api/orders', {'board': DEVICE_ID}).json()['results']
+
+        self.assertEqual([row['id'] for row in rows], [hold.pk, batch.pk])
+        self.assertEqual(rows[1], {
+            'id': batch.pk, 'board': DEVICE_ID, 'plugin': str(self.plugin.plugin_uuid), 'kind': 'BATCH',
+            'reason': '', 't0_ms': 1000, 't_end_ms': 1000, 't_sent_ms': 900, 'point_count': 3,
+            'created_at': iso(at(0)),
+        })
+        self.assertEqual(rows[0]['point_count'], 0)
+
+    def test_filters_by_kind_reason_and_range(self):
+        self.order(self.rotor, 0)
+        limits = self.order(self.rotor, 1, kind=DispatchOrder.Kind.HOLD, reason=DispatchOrder.Reason.LIMITS)
+        self.order(self.rotor, 2, kind=DispatchOrder.Kind.HOLD, reason=DispatchOrder.Reason.END)
+
+        by_reason = self.client.get('/api/orders', {'kind': 'HOLD', 'reason': 'limits'}).json()['results']
+        by_range = self.client.get('/api/orders', {'from': iso(at(1)), 'to': iso(at(2))}).json()['results']
+
+        self.assertEqual([row['id'] for row in by_reason], [limits.pk])
+        self.assertEqual([row['id'] for row in by_range], [limits.pk])
+
+    def test_bad_filters_are_rejected_by_field(self):
+        response = self.client.get('/api/orders', {'kind': 'PAUSE', 'board': 'not-a-mac'})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(set(response.json()), {'kind', 'board'})
+
+    def test_csv(self):
+        self.order(self.rotor, 0)
+
+        response = self.client.get('/api/orders', {'format': 'csv'})
+
+        lines = response.content.decode().splitlines()
+        self.assertEqual(lines[0], 'id,board,plugin,kind,reason,t0_ms,t_end_ms,t_sent_ms,point_count,created_at')
+        self.assertEqual(len(lines), 2)
+
+
+class PluginDataHistoryTests(FrontTestCase):
+    def setUp(self):
+        super().setUp()
+        self.plugin = PluginInstance.objects.create(name='tinygs-1', plugin_type='tinygs')
+
+    def row(self, payload, message_type='rx', plugin=None, seconds=0):
+        return PluginData.objects.create(
+            plugin=plugin or self.plugin, message_type=message_type, payload=payload, created_at=at(seconds),
+        )
+
+    def test_pulls_rssi_snr_crc_and_satellite_out_of_the_payload(self):
+        payload = {'rssi': -112, 'snr': 4.5, 'crc_error': False, 'satellite': 'NOAA 19', 'NORAD': 33591}
+        row = self.row(payload)
+
+        result = self.client.get('/api/plugin-data').json()['results'][0]
+
+        self.assertEqual(result, {
+            'id': row.pk, 'plugin': str(self.plugin.plugin_uuid), 'message_type': 'rx', 'device': '',
+            'received_at': None, 'created_at': iso(at(0)),
+            'rssi': -112, 'snr': 4.5, 'crc_error': False, 'satellite': {'name': 'NOAA 19', 'norad': 33591},
+            'payload': payload,
+        })
+
+    def test_missing_or_odd_fields_are_null_and_the_payload_stays(self):
+        # Review Focus 5: an rx without rssi, a tracking without a satellite, the
+        # placeholder a station sends before it gets one, a payload the ingester
+        # wrapped, odd types, and a plugin type nobody knows.
+        weather = PluginInstance.objects.create(name='weather-1', plugin_type='weather')
+        payloads = [
+            {},
+            {'mode': 'LoRa'},
+            {'satellite': 'Waiting', 'NORAD': 46494},
+            {'value': 42},
+            {'rssi': 'strong', 'snr': True, 'crc_error': 'no', 'satellite': 7, 'NORAD': True},
+            {'temperature': 21.5},
+        ]
+        self.row(payloads[0])
+        self.row(payloads[1], message_type='tracking')
+        self.row(payloads[2], message_type='tracking')
+        self.row(payloads[3])
+        self.row(payloads[4])
+        self.row(payloads[5], message_type='reading', plugin=weather)
+
+        response = self.client.get('/api/plugin-data')
+
+        self.assertEqual(response.status_code, 200)
+        results = response.json()['results']
+        self.assertEqual(len(results), 6)
+        for result in results:
+            with self.subTest(payload=result['payload']):
+                self.assertEqual(
+                    [result['rssi'], result['snr'], result['crc_error'], result['satellite']],
+                    [None, None, None, None],
+                )
+        self.assertEqual([result['payload'] for result in reversed(results)], payloads)
+
+    def test_filters_by_plugin_type_and_range(self):
+        other = PluginInstance.objects.create(name='tinygs-2', plugin_type='tinygs')
+        rx = self.row({'rssi': -100}, seconds=1)
+        self.row({'satellite': 'ISS'}, message_type='tracking', seconds=1)
+        self.row({'rssi': -90}, plugin=other, seconds=1)
+        self.row({'rssi': -80}, seconds=5)
+
+        rows = self.client.get('/api/plugin-data', {
+            'plugin': str(self.plugin.plugin_uuid), 'type': 'rx', 'from': iso(at(0)), 'to': iso(at(2)),
+        }).json()['results']
+
+        self.assertEqual([row['id'] for row in rows], [rx.pk])
+
+    def test_a_malformed_plugin_uuid_is_rejected(self):
+        response = self.client.get('/api/plugin-data', {'plugin': 'tinygs-1'})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('plugin', response.json())
+
+    def test_csv_writes_nested_values_as_json(self):
+        self.row({'rssi': -112, 'satellite': 'NOAA 19'})
+
+        lines = self.client.get('/api/plugin-data', {'format': 'csv'}).content.decode().splitlines()
+
+        self.assertEqual(
+            lines[0],
+            'id,plugin,message_type,device,received_at,created_at,rssi,snr,crc_error,satellite,payload',
+        )
+        self.assertTrue(lines[1].endswith(
+            ',-112,,,"{""name"": ""NOAA 19"", ""norad"": null}","{""rssi"": -112, ""satellite"": ""NOAA 19""}"'
+        ))
+
+
+class HistoryAuthTests(FrontTestCase):
+    def test_every_history_endpoint_needs_a_login(self):
+        Rotor.objects.create(device_id=DEVICE_ID)
+        del self.client.defaults['HTTP_AUTHORIZATION']
+
+        for url in (f'/api/boards/{DEVICE_ID}/states', f'/api/boards/{DEVICE_ID}/states/series',
+                    '/api/orders', '/api/plugin-data'):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 401)

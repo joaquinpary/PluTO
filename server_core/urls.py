@@ -39,6 +39,8 @@ urlpatterns = [
     path('boards/<str:device_id>/states', api_history.BoardStatesView.as_view(), name='api-board-states'),
     path('boards/<str:device_id>/states/series', api_history.BoardStatesSeriesView.as_view(),
          name='api-board-states-series'),
+    path('orders', api_history.OrdersView.as_view(), name='api-orders'),
+    path('plugin-data', api_history.PluginDataHistoryView.as_view(), name='api-plugin-data-history'),
     # The OpenAPI schema and its Swagger UI.
     path('schema', SpectacularAPIView.as_view(), name='api-schema'),
     path('docs', SpectacularSwaggerView.as_view(url_name='api-schema'), name='api-docs'),
