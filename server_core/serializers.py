@@ -383,3 +383,53 @@ class TrackPointSerializer(serializers.Serializer):
 class TrackSerializer(serializers.Serializer):
     device_id = serializers.CharField()
     points = TrackPointSerializer(many=True)
+
+
+# --- History (GET /api/boards/<id>/states, /api/orders, /api/plugin-data) ---
+
+class RangeQuerySerializer(serializers.Serializer):
+    """`from` and `to` of a history query, in ISO 8601.
+
+    `from` is a Python keyword, so both are added in get_fields instead of
+    being declared as attributes.
+    """
+    range_required = False
+
+    def get_fields(self):
+        fields = super().get_fields()
+        fields['from'] = serializers.DateTimeField(required=self.range_required, help_text='Inclusive, ISO 8601.')
+        fields['to'] = serializers.DateTimeField(required=self.range_required, help_text='Exclusive, ISO 8601.')
+        return fields
+
+    def validate(self, attrs):
+        if 'from' in attrs and 'to' in attrs and attrs['from'] >= attrs['to']:
+            raise serializers.ValidationError({'to': 'Must be later than from.'})
+        return attrs
+
+
+class SeriesQuerySerializer(RangeQuerySerializer):
+    range_required = True
+    max_points = serializers.IntegerField(min_value=1, max_value=10000, default=2000)
+
+
+class StateRowSerializer(serializers.ModelSerializer):
+    err_cdeg = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RotorState
+        fields = ['received_at', 'mode', 'az_cdeg', 'el_cdeg', 'pan_mode', 'batch_accepted',
+                  'batch_error', 'latency_ms', 'clock_synced', 'err_cdeg']
+
+    def get_err_cdeg(self, state) -> int | None:
+        # Only a board with encoders sends it (device-state.md §3).
+        return tracking_error(state.payload)
+
+
+class SeriesPointSerializer(serializers.Serializer):
+    t = serializers.DateTimeField()
+    az_cdeg = serializers.IntegerField(allow_null=True)
+    el_cdeg = serializers.IntegerField(allow_null=True)
+
+
+class SeriesSerializer(serializers.Serializer):
+    points = SeriesPointSerializer(many=True)

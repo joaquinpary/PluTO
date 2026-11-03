@@ -2,7 +2,7 @@ from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
-from . import api, api_account, api_boards, api_plugins
+from . import api, api_account, api_boards, api_history, api_plugins
 
 urlpatterns = [
     # Plugin containers, with Plugin <token>.
@@ -36,6 +36,9 @@ urlpatterns = [
     path('plugins/<uuid:plugin_uuid>/coordinates-file', api_plugins.PluginCoordinatesFileView.as_view(),
          name='api-plugin-coordinates-file'),
     path('plugins/<uuid:plugin_uuid>/logs', api_plugins.PluginLogsView.as_view(), name='api-plugin-logs'),
+    path('boards/<str:device_id>/states', api_history.BoardStatesView.as_view(), name='api-board-states'),
+    path('boards/<str:device_id>/states/series', api_history.BoardStatesSeriesView.as_view(),
+         name='api-board-states-series'),
     # The OpenAPI schema and its Swagger UI.
     path('schema', SpectacularAPIView.as_view(), name='api-schema'),
     path('docs', SpectacularSwaggerView.as_view(url_name='api-schema'), name='api-docs'),
