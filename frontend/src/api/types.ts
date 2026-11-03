@@ -12,3 +12,6 @@ export type LiveState = NonNullable<BoardLive['state']>;
 export type Plugin = Ok<'/api/plugins'>[number];
 export type PluginFilters = NonNullable<paths['/api/plugins']['get']['parameters']['query']>;
 export type Track = Ok<'/api/boards/{device_id}/track'>;
+
+export type PluginType = Ok<'/api/plugin-types'>[number];
+export type Board = Ok<'/api/boards'>[number];
