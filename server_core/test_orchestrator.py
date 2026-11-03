@@ -1,3 +1,4 @@
+import json
 import os
 from unittest.mock import MagicMock, patch
 
@@ -69,6 +70,37 @@ class PluginOrchestratorTests(SimpleTestCase):
         environment = client.containers.run.call_args.kwargs['environment']
         self.assertNotIn('ROTOR_DEVICE_ID', environment)
         self.assertNotIn('PLUTO_API_TOKEN', environment)
+
+    def test_a_plugin_gets_the_location_of_its_board(self):
+        with patch('server_core.orchestrator.docker.DockerClient') as client_cls:
+            client = client_cls.return_value
+            client.containers.run.return_value.id = 'container-123'
+
+            PluginOrchestrator().spawn_plugin(
+                plugin_type='tinygs',
+                instance_id='uuid-1',
+                station_coordinates={'lat': -31.4, 'lon': -64.2, 'alt': 470.0},
+                tinygs_device='My_TinyGS',
+            )
+
+        environment = client.containers.run.call_args.kwargs['environment']
+        self.assertEqual(json.loads(environment['STATION_COORDINATES']), {'lat': -31.4, 'lon': -64.2, 'alt': 470.0})
+
+    def test_a_plugin_without_a_location_gets_no_station(self):
+        with patch('server_core.orchestrator.docker.DockerClient') as client_cls:
+            client = client_cls.return_value
+            client.containers.run.return_value.id = 'container-123'
+
+            success, _ = PluginOrchestrator().spawn_plugin(
+                plugin_type='tinygs',
+                instance_id='uuid-1',
+                tinygs_device='My_TinyGS',
+            )
+
+        self.assertTrue(success)
+        environment = client.containers.run.call_args.kwargs['environment']
+        for key in ('STATION_COORDINATES', 'STATION_LAT', 'STATION_LON', 'STATION_ALT'):
+            self.assertNotIn(key, environment)
 
     def test_plugin_images_are_built_from_plugins_so_they_get_the_sdk(self):
         with patch('server_core.orchestrator.docker.DockerClient') as client_cls:

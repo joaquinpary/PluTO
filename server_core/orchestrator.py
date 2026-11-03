@@ -99,13 +99,15 @@ class PluginOrchestrator:
             logger.error(f"Docker API error while checking image '{image_name}': {exc}")
             return False, f"Docker API error while checking image for '{plugin_type}': {exc}"
 
-    def spawn_plugin(self, plugin_type, instance_id, station_coordinates, api_token=None, rotor_device_id=None, **kwargs):
+    def spawn_plugin(self, plugin_type, instance_id, station_coordinates=None, api_token=None, rotor_device_id=None, **kwargs):
         """
         Spawns an isolated container for a specific plugin.
         
         Parameters:
         - plugin_type: 'tinygs' or 'file_tracker' (matches your directory tree)
         - instance_id: A unique identifier (e.g. database ID)
+        - station_coordinates: the location of the board bound to the instance,
+          {lat, lon, alt}, or None when there is no board or it has no location
         - api_token: the plain token the container sends to /api/ (see api_tokens.py)
         - rotor_device_id: device_id of the board bound to the instance, if any
         - kwargs: Additional environment variables (e.g. FILE_PATH)
@@ -117,10 +119,12 @@ class PluginOrchestrator:
         if self.client is None:
             return False, "Cannot connect to Docker Proxy."
 
-        try:
-            normalized_station = _normalize_station_coordinates(station_coordinates)
-        except ValueError as exc:
-            return False, f"Error: {exc}"
+        normalized_station = None
+        if station_coordinates is not None:
+            try:
+                normalized_station = _normalize_station_coordinates(station_coordinates)
+            except ValueError as exc:
+                return False, f"Error: {exc}"
 
         container_name = self.container_name(plugin_type, instance_id)
         image_ok, image_result = self._build_image_if_needed(plugin_type)
@@ -139,13 +143,18 @@ class PluginOrchestrator:
             "MQTT_USERNAME": mqtt_config["USERNAME"],
             "MQTT_PASSWORD": mqtt_config["PASSWORD"],
             "INSTANCE_ID": str(instance_id),
-            "STATION_COORDINATES": json.dumps(normalized_station),
-            "STATION_LAT": str(normalized_station["lat"]),
-            "STATION_LON": str(normalized_station["lon"]),
-            "STATION_ALT": str(normalized_station["alt"]),
             "PLUTO_API_URL": settings.PLUTO_API_URL,
             "PLUTO_TRANSFORM_URL": settings.PLUTO_TRANSFORM_URL,
         }
+        # Without a location the plugin gets none of these: tinygs then relays
+        # packets and computes no passes, file_tracker falls back to (0, 0, 0).
+        if normalized_station is not None:
+            environment.update({
+                "STATION_COORDINATES": json.dumps(normalized_station),
+                "STATION_LAT": str(normalized_station["lat"]),
+                "STATION_LON": str(normalized_station["lon"]),
+                "STATION_ALT": str(normalized_station["alt"]),
+            })
         if api_token:
             environment["PLUTO_API_TOKEN"] = api_token
         # Only a plugin with a board listens to one; without it the plugin

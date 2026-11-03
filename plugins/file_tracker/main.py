@@ -28,6 +28,7 @@ def build_station_from_env() -> Station:
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             logger.warning("Invalid STATION_COORDINATES value, falling back to STATION_LAT/LON/ALT")
 
+    # PluTO sends none of these for an instance whose board has no location: then it is (0, 0, 0).
     return Station(
         lat=float(os.environ.get("STATION_LAT", 0.0)),
         lon=float(os.environ.get("STATION_LON", 0.0)),
