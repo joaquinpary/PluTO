@@ -139,3 +139,49 @@ class ContainerStatusesTests(DockerTestCase):
             orchestrator = PluginOrchestrator()
 
         self.assertIsNone(orchestrator.container_statuses())
+
+
+class LogsTests(DockerTestCase):
+    def test_reads_the_last_lines_of_a_plugin_container(self):
+        container = fake_container('plugin-tinygs-uuid-1', logs=b'Starting tinygs subscriber...\nConnected\n')
+        self.client.containers.get.return_value = container
+
+        lines = self.orchestrator.container_logs('tinygs', 'uuid-1', tail=2)
+
+        self.assertEqual(lines, ['Starting tinygs subscriber...', 'Connected'])
+        self.client.containers.get.assert_called_once_with('plugin-tinygs-uuid-1')
+        container.logs.assert_called_once_with(tail=2)
+
+    def test_an_instance_without_a_container_has_no_logs(self):
+        self.client.containers.get.side_effect = docker.errors.NotFound('No such container')
+
+        self.assertIsNone(self.orchestrator.container_logs('tinygs', 'uuid-1', tail=100))
+
+    def test_bytes_that_are_not_utf8_do_not_break_the_lines(self):
+        self.client.containers.get.return_value = fake_container('plugin-tinygs-uuid-1', logs=b'ok\n\xff\n')
+
+        self.assertEqual(self.orchestrator.container_logs('tinygs', 'uuid-1', tail=100), ['ok', '�'])
+
+    def test_reads_a_compose_service_by_its_label(self):
+        container = fake_container('pluto-front-coord_transform-1', status='exited', logs=b'POST /transform 200\n')
+        self.client.containers.list.return_value = [container]
+
+        lines = self.orchestrator.service_logs('coord_transform', tail=50)
+
+        self.assertEqual(lines, ['POST /transform 200'])
+        # all=True: the logs of a service that crashed are the ones worth reading.
+        self.client.containers.list.assert_called_once_with(all=True, filters={'label': [
+            'com.docker.compose.service=coord_transform',
+            'com.docker.compose.oneoff=False',
+        ]})
+        container.logs.assert_called_once_with(tail=50)
+
+    def test_only_pluto_services_are_looked_up(self):
+        for service in ('postgres', 'mqtt_dispatch'):
+            self.assertIsNone(self.orchestrator.service_logs(service, tail=100))
+        self.client.containers.list.assert_not_called()
+
+    def test_a_service_without_a_container_has_no_logs(self):
+        self.client.containers.list.return_value = []
+
+        self.assertIsNone(self.orchestrator.service_logs('coord_transform', tail=100))

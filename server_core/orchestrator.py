@@ -235,3 +235,47 @@ class PluginOrchestrator:
                 if name.startswith(PLUGIN_CONTAINER_PREFIX):
                     statuses[name] = container.status
         return statuses
+
+    def container_logs(self, plugin_type, instance_id, tail):
+        """The last `tail` lines a plugin container logged, or None without a container."""
+        if self.client is None:
+            return None
+        try:
+            container = self.client.containers.get(self.container_name(plugin_type, instance_id))
+        except docker.errors.NotFound:
+            return None
+        except docker.errors.APIError as exc:
+            logger.error(f"Error looking up the container of {instance_id}: {exc}")
+            return None
+        return self._read_logs(container, tail)
+
+    def service_logs(self, service, tail):
+        """The last `tail` lines of one of PluTO's own services, or None.
+
+        Found by the label compose puts on its containers. PluTO already
+        assumes one stack per Docker host (pluto-network, the plugin container
+        names), so the first match is the one.
+        """
+        if service not in LOG_SERVICES or self.client is None:
+            return None
+        try:
+            containers = self.client.containers.list(all=True, filters={"label": [
+                f"com.docker.compose.service={service}",
+                # Not a `docker compose run` of the same service, e.g. the test suite.
+                "com.docker.compose.oneoff=False",
+            ]})
+        except docker.errors.APIError as exc:
+            logger.error(f"Error looking up the {service} container: {exc}")
+            return None
+        if not containers:
+            return None
+        return self._read_logs(containers[0], tail)
+
+    def _read_logs(self, container, tail):
+        try:
+            raw = container.logs(tail=tail)
+        except docker.errors.APIError as exc:
+            logger.error(f"Error reading logs: {exc}")
+            return None
+        # A container may log anything; one byte that is not UTF-8 must not cost the page.
+        return raw.decode("utf-8", errors="replace").splitlines()
