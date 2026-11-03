@@ -1,5 +1,74 @@
-import { Title } from '@mantine/core';
+import { Alert, Anchor, Card, Center, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Link } from 'react-router-dom';
+import { useBoardsLive, usePlugins, useTracks } from '../../api/queries';
+import { BoardCard } from '../../components/BoardCard';
+import { SkyPlot, type SkyAntenna } from '../../components/SkyPlot';
+import { alertsFor } from '../../lib/alerts';
+import { useNow } from '../../lib/useNow';
 
+/** Inicio: the boards live, the sky and the alerts (spec 4.1). */
 export function HomePage() {
-  return <Title order={2}>Inicio</Title>;
+  const now = useNow();
+  const live = useBoardsLive();
+  const plugins = usePlugins();
+  const boards = live.data ?? [];
+  const tracks = useTracks(boards.map((board) => board.device_id));
+
+  const alerts = alertsFor(boards, plugins.data ?? []);
+  const antennas: SkyAntenna[] = boards.flatMap((board) => {
+    // Where it actually points when the board measures it, else where it was told to.
+    const position = board.state?.meas ?? board.state;
+    if (position?.az_cdeg == null || position.el_cdeg == null) return [];
+    return [{ id: board.device_id, label: board.name || board.device_id, az_cdeg: position.az_cdeg, el_cdeg: position.el_cdeg }];
+  });
+
+  return (
+    <Stack>
+      <Title order={2}>Inicio</Title>
+
+      {live.isError && (
+        <Alert color="red" title="Sin conexión con el servidor">
+          Se muestran los últimos datos recibidos; se sigue reintentando.
+        </Alert>
+      )}
+      {alerts.map((alert) => (
+        <Alert key={alert.key} color={alert.color}>
+          {alert.message}
+        </Alert>
+      ))}
+
+      {live.data === undefined ? (
+        !live.isError && (
+          <Center>
+            <Loader />
+          </Center>
+        )
+      ) : boards.length === 0 ? (
+        <Text c="dimmed">
+          Todavía no hay placas. Buscalas en{' '}
+          <Anchor component={Link} to="/boards">
+            Placas
+          </Anchor>
+          .
+        </Text>
+      ) : (
+        <>
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+            {boards.map((board) => (
+              <BoardCard key={board.device_id} board={board} now={now} />
+            ))}
+          </SimpleGrid>
+          <Card withBorder>
+            <Title order={4} mb="sm">
+              Cielo
+            </Title>
+            <SkyPlot
+              antennas={antennas}
+              tracks={boards.map((board, i) => ({ id: board.device_id, points: tracks[i]?.data?.points ?? [] }))}
+            />
+          </Card>
+        </>
+      )}
+    </Stack>
+  );
 }
