@@ -1,13 +1,8 @@
-"""Reading one field out of a stored payload (RotorState.payload, PluginData.payload)."""
+"""Reading fields out of stored payloads."""
 
 
 def payload_value(payload, key, kind):
-    """payload[key] when it is a `kind`, otherwise None.
-
-    Payloads are whatever a board or a plugin sent, so a missing field or one
-    of an unexpected type is an empty cell, never an error. bool is an int in
-    Python, and True is not a number of decibels.
-    """
+    """payload[key] if it is a `kind` (bools aren't numbers), else None."""
     value = payload.get(key) if isinstance(payload, dict) else None
     if isinstance(value, bool) and kind is not bool:
         return None

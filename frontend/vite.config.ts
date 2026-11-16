@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [react()],
   server: {
-    // The same origin the browser sees behind nginx, so development needs no CORS.
+    // Same origin as behind nginx: no CORS in development.
     proxy: { '/api': 'http://localhost:8000' },
   },
   test: {

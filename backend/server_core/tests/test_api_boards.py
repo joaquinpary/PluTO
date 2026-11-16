@@ -1,4 +1,4 @@
-"""The board endpoints of the front end: detail and limits, live state and the pass in course."""
+"""Board endpoints."""
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -21,8 +21,7 @@ T0 = datetime(2026, 10, 12, 18, 0, tzinfo=timezone.utc)
 
 
 def at(seconds):
-    # Explicit times: received_at and created_at default to the database's
-    # now(), which PostgreSQL keeps fixed for the whole test transaction.
+    # Explicit times: the DB's now() is fixed for the whole test transaction.
     return T0 + timedelta(seconds=seconds)
 
 
@@ -112,8 +111,7 @@ class AzimuthWindowTests(FrontTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual((response.json()['min_azimuth_deg'], response.json()['max_azimuth_deg']), (300, 60))
         self.rotor.refresh_from_db()
-        # Stored as given: the plugin reads it through pluto_sdk.pointing.RotorLimits,
-        # whose own tests cover the wrap through north.
+        # Stored as given; RotorLimits' own tests cover the wrap.
         self.assertEqual((self.rotor.min_azimuth_deg, self.rotor.max_azimuth_deg), (300, 60))
 
     def test_half_a_window_is_rejected(self):
@@ -256,7 +254,7 @@ class BoardsLiveTests(FrontTestCase):
 
 
 class SatelliteFromTrackingTests(SimpleTestCase):
-    """Whatever the station sent, the live view gets a satellite or None, never an exception."""
+    """Odd station payloads give a satellite or None, never an exception."""
 
     def test_reads_the_name_and_the_norad(self):
         payload = {'station': 'My TinyGS', 'satellite': 'NOAA 19', 'NORAD': 33591, 'mode': 'LoRa'}
@@ -294,7 +292,7 @@ class BoardTrackTests(FrontTestCase):
         order(self.rotor, self.plugin, 5, kind=DispatchOrder.Kind.HOLD, t0_ms=3_000, reason='end')
         order(self.rotor, self.plugin, 10, t0_ms=50_000,
               points=[(0, 9_000, 1_000), (1_000, 9_100, 1_100), (2_000, 9_200, 1_200)])
-        # Overlaps the previous batch at 52 000: the later message is the one in effect.
+        # Overlaps the previous batch at 52 000; the later one wins.
         order(self.rotor, self.plugin, 11, t0_ms=52_000, points=[(0, 9_250, 1_250), (1_000, 9_300, 1_300)])
         order(self.other, self.plugin, 12, t0_ms=50_000, points=[(0, 1, 1)])
 

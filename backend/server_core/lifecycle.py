@@ -1,10 +1,4 @@
-"""What happens to a plugin instance: launch, stop, sync, delete, and the
-coordinates file of a file_tracker.
-
-The API calls these, and so does the admin until it goes away; nothing here
-knows about HTTP. A failure is a LifecycleError whose code the caller turns
-into a response.
-"""
+"""Plugin instance lifecycle: launch, stop, sync, delete and file_tracker files. No HTTP here."""
 import logging
 
 from django.db import transaction
@@ -43,9 +37,8 @@ def _save_runtime(instance, status, container_id, api_token_hash):
 
 
 def launch(instance):
-    """Start the container of an instance that is STOPPED or in ERROR. Returns it RUNNING."""
-    # The stored row, not whatever the caller holds: a type edited but never
-    # saved must not decide which container gets started.
+    """Start the container of a STOPPED or ERROR instance."""
+    # Use the stored row, not unsaved edits.
     instance.refresh_from_db()
     if instance.status == RUNNING:
         raise LifecycleError('already_running', f'{instance.name} is already running.')
@@ -53,23 +46,19 @@ def launch(instance):
     handler = get_handler(instance.plugin_type)
     if handler is None:
         raise LifecycleError('invalid_config', f'Unknown plugin type {instance.plugin_type!r}.')
-    # Checked on save too; this catches a configuration stored before that.
+    # Also checked on save; this catches older configs.
     errors = config_errors(handler, instance.config)
     if errors:
         raise LifecycleError('invalid_config', 'The configuration is not valid. Fix it and save it before launching.', fields=errors)
 
-    # A new token on every launch, so one leaked from an earlier container
-    # stops working as soon as that container is replaced.
+    # New token per launch so a leaked one dies with its container.
     api_token, api_token_hash = issue_token()
 
-    # Claim the instance (and its board) before building, which can take
-    # minutes: a second launch from another tab or the phone must find it
-    # RUNNING instead of starting a clashing container and wiping the token.
+    # Claim it before building (can take minutes) so a concurrent launch finds it RUNNING.
     with transaction.atomic():
         if instance.rotor_id:
-            # Serialises launches on one board, so RF-31.1 holds for two instances too.
+            # Lock the board so RF-31.1 (one driver per board) holds under concurrent launches.
             Rotor.objects.select_for_update().filter(pk=instance.rotor_id).first()
-            # RF-31.1: one running instance drives a board at a time.
             driver = (
                 PluginInstance.objects.filter(rotor_id=instance.rotor_id, status=RUNNING)
                 .exclude(pk=instance.pk)
@@ -93,8 +82,7 @@ def launch(instance):
             **(instance.config or {}),
         )
     except Exception as exc:
-        # docker-py also raises requests' own errors, e.g. a read timeout
-        # while the first launch builds the image.
+        # docker-py also raises requests errors, e.g. a timeout on the first build.
         success, result = False, str(exc)
 
     if not success:
@@ -106,11 +94,11 @@ def launch(instance):
 
 
 def stop(instance):
-    """Remove the container and revoke its token. Works from any status, ERROR included."""
+    """Remove the container and revoke its token, from any status."""
     instance.refresh_from_db()
     success, result = PluginOrchestrator().kill_plugin(instance.plugin_type, instance.plugin_uuid)
     if not success:
-        # Nothing changes: the container may still be there, and so is its record.
+        # The container may still exist, so keep the record as is.
         raise LifecycleError('docker', result)
     _save_runtime(instance, STOPPED, '', '')
     return instance
@@ -125,7 +113,7 @@ def _status_for(runtime_status):
 
 
 def sync(instance):
-    """Make the stored status say what Docker says."""
+    """Match the stored status to Docker's."""
     instance.refresh_from_db()
     success, runtime_status = PluginOrchestrator().get_container_status(instance.plugin_type, instance.plugin_uuid)
     if not success:
@@ -143,12 +131,7 @@ def sync(instance):
 
 
 def delete(instance):
-    """Stop the instance unless it is STOPPED, then delete it.
-
-    An instance that produced data or drove a board is kept, as the database
-    already demands (PROTECT): its history must keep pointing at it. That is
-    checked before stopping, so a refused delete leaves the instance as it was.
-    """
+    """Stop and delete the instance; refused before stopping if it has history (PROTECT)."""
     instance.refresh_from_db()
     if instance.data.exists() or instance.orders.exists():
         raise LifecycleError(
@@ -164,8 +147,7 @@ def delete(instance):
 
 
 def _clear_coordinates_file(plugin_uuid):
-    # Otherwise the file outlives the instance, retained on a topic nobody
-    # will ever read again.
+    # Otherwise the retained file outlives the instance.
     try:
         publish_retained(input_topic(plugin_uuid), b'')
     except Exception as exc:
@@ -173,11 +155,7 @@ def _clear_coordinates_file(plugin_uuid):
 
 
 def send_coordinates_file(instance, uploaded_file):
-    """Hand a coordinates file to a file_tracker, running or not.
-
-    The message is retained: a running plugin gets it right away, a stopped
-    one when it is launched. A new file replaces the previous one.
-    """
+    """Publish a coordinates file, retained so a stopped file_tracker gets it on launch."""
     if instance.plugin_type != 'file_tracker':
         raise LifecycleError('not_file_tracker', 'Only file_tracker instances take a coordinates file.')
     config = instance.config or {}
@@ -185,7 +163,7 @@ def send_coordinates_file(instance, uploaded_file):
     if missing:
         raise LifecycleError('invalid_config', f'Set {" and ".join(missing)} in the configuration first.')
 
-    # One byte past the limit is enough to know the file is too big.
+    # One byte past the limit is enough to reject it.
     content = uploaded_file.read(MAX_FILE_BYTES + 1)
     try:
         message = build_file_message(config, uploaded_file.name, content)

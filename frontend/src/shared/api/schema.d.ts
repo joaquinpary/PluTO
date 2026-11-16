@@ -691,7 +691,7 @@ export interface components {
             max_azimuth_deg?: number | null;
             readonly plugins: components["schemas"]["BoardPlugin"][];
         };
-        /** @description A board as the home page polls it. api_boards.BoardsLiveView sets the attributes it reads. */
+        /** @description A board as the home page polls it; BoardsLiveView sets the extra attributes. */
         BoardLive: {
             readonly device_id: string;
             readonly name: string;
@@ -715,7 +715,7 @@ export interface components {
             name: string;
             status?: components["schemas"]["StatusEnum"];
         };
-        /** @description One entry of a handler's config_fields: what the front end builds the form from. */
+        /** @description A handler config field, for the front end form. */
         ConfigField: {
             /** @description The key in config. */
             name: string;
@@ -751,7 +751,7 @@ export interface components {
         DeviceReportResult: {
             device_id: string;
         };
-        /** @description One message a plugin published on device/<device_id>/coordinates/polar. */
+        /** @description A message a plugin published on device/<device_id>/coordinates/polar. */
         DispatchOrderRequest: {
             kind: components["schemas"]["KindEnum"];
             t0_ms: number;
@@ -969,14 +969,7 @@ export interface components {
             status?: components["schemas"]["StatusEnum"];
             readonly board: string | null;
         };
-        /**
-         * @description A stored message with the fields worth a column pulled out of its payload.
-         *
-         *     The names are the ones the tinyGS fork sends (MQTT_Pluto::publishRx and
-         *     publishTracking), and satellite has the shape of GET /api/boards/live. Any
-         *     other plugin type, or a message without them, leaves those columns empty
-         *     and keeps the whole payload.
-         */
+        /** @description A stored message, with the tinyGS fork's rx/tracking fields pulled out of the payload. */
         PluginDataRow: {
             readonly id: number;
             /** Format: uuid */
@@ -1044,7 +1037,7 @@ export interface components {
          * @enum {string}
          */
         ResultEnum: "ingested" | "duplicate" | "rejected";
-        /** @description What a plugin needs to point its board: which board, and where it may look. */
+        /** @description The board a plugin points and its limits. */
         RotorLimits: {
             device_id: string;
             /**

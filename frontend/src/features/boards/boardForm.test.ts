@@ -36,7 +36,7 @@ describe('validateBoard', () => {
   it('rejects half a location, on the coordinate that is missing, like Rotor.clean()', () => {
     expect(validateBoard({ ...BASE, longitude_deg: '' })).toEqual({ longitude_deg: HALF_LOCATION });
     expect(validateBoard({ ...BASE, latitude_deg: '', altitude_m: '' })).toEqual({ latitude_deg: HALF_LOCATION });
-    // No location at all is fine: the board just has none yet.
+    // No location at all is fine.
     expect(validateBoard({ ...BASE, latitude_deg: '', longitude_deg: '', altitude_m: '' })).toEqual({});
   });
 
@@ -78,7 +78,7 @@ describe('boardFormValues', () => {
       name: '', latitude_deg: null, longitude_deg: null, altitude_m: null,
       min_elevation_deg: 10, min_azimuth_deg: null, max_azimuth_deg: null,
     })).toEqual(empty);
-    // What the schema leaves optional may not come at all; the elevation falls back to Rotor's default.
+    // Optional fields may be missing; elevation falls back to Rotor's default.
     expect(boardFormValues({})).toEqual(empty);
   });
 });

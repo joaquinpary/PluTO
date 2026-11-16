@@ -5,7 +5,7 @@ import { usePlugins } from '../plugins/queries';
 interface Props {
   value: string;
   onChange: (value: string) => void;
-  /** An empty option that means "every one" instead of "choose one". */
+  /** Adds an empty option meaning "all". */
   allowAll?: boolean;
   label?: string;
 }

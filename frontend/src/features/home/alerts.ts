@@ -7,7 +7,7 @@ const HOLD_MESSAGES: Record<string, string> = {
   expired: 'los puntos llegaron vencidos',
 };
 
-/** The Home's alerts, from the same data the cards show. */
+/** Derived from the same data as the cards. */
 export function alertsFor(boards: BoardLive[], plugins: Plugin[]): Alert[] {
   const alerts: Alert[] = [];
 

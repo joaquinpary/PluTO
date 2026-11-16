@@ -19,12 +19,8 @@ logger = logging.getLogger("tinygs_main")
 def build_station_from_env():
     """The ground station the orchestrator injected, as a {lat, lon, alt} dict, or None.
 
-    STATION_COORDINATES first, the loose STATION_LAT/LON/ALT as a fallback.
-    None when there is neither: PluTO sends no location for an instance whose
-    board has none, and the plugin then relays packets without computing
-    passes. The station_location the board sends in every tracking message is
-    ignored on purpose — the one configured in PluTO is the authority, and it
-    carries the altitude the board does not.
+    STATION_COORDINATES, else STATION_LAT/LON/ALT. The board's station_location is
+    ignored on purpose: PluTO's is the authority and has the altitude.
     """
     station_coordinates = os.environ.get("STATION_COORDINATES", "")
     if station_coordinates:
@@ -115,8 +111,7 @@ def main():
             # the plugin relays the station's data and nothing else.
             logger.info("No board bound to this instance: relaying the station's data only")
         elif (station := build_station_from_env()) is None:
-            # The packets are worth relaying anyway; only a pass needs to know
-            # where the antenna stands.
+            # Packets are still worth relaying; only passes need the antenna's position.
             logger.warning("No station location: relaying the station's data without computing passes")
         else:
             tracker = Tracker(

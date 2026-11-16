@@ -1,11 +1,6 @@
-/**
- * The board form (PATCH /api/boards/<device_id>). validateBoard() mirrors the
- * validators of Rotor and Rotor.clean(): an azimuth window takes both ends or
- * none, and a start above the end wraps through north (300 → 60); latitude
- * and longitude go together too.
- */
+// Mirrors Rotor.clean(): azimuth window and lat/lon take both ends or none; start > end wraps through north.
 
-/** What a NumberInput holds: a number, or '' while empty. */
+/** Mantine NumberInput value: '' while empty. */
 export type NumberValue = number | string;
 
 export interface BoardFormValues {
@@ -28,13 +23,10 @@ export interface BoardSettings {
   max_azimuth_deg: number | null;
 }
 
-/**
- * A Board as the API answers it. With COMPONENT_SPLIT_REQUEST the schema only
- * promises the read-only fields of an answer, so the editable ones are optional.
- */
+/** COMPONENT_SPLIT_REQUEST makes the editable fields optional in a response. */
 export type BoardSource = { [K in keyof BoardSettings]?: BoardSettings[K] | null };
 
-/** Rotor.min_elevation_deg's default, for an answer that leaves it out. */
+/** Rotor.min_elevation_deg's default. */
 const DEFAULT_MIN_ELEVATION_DEG = 10;
 
 type NumberKey = Exclude<keyof BoardFormValues, 'name'>;
@@ -94,14 +86,14 @@ export function validateBoard(values: BoardFormValues): Record<string, string> {
   const hasEnd = !isBlank(values.max_azimuth_deg);
   if (hasStart !== hasEnd) errors[hasStart ? 'max_azimuth_deg' : 'min_azimuth_deg'] = HALF_WINDOW;
 
-  // Half a location is no place at all, and would silently mean none (Rotor.clean).
+  // Half a location would silently mean none (Rotor.clean).
   const hasLatitude = !isBlank(values.latitude_deg);
   const hasLongitude = !isBlank(values.longitude_deg);
   if (hasLatitude !== hasLongitude) errors[hasLatitude ? 'longitude_deg' : 'latitude_deg'] = HALF_LOCATION;
   return errors;
 }
 
-/** Only called once validateBoard() returned no errors. */
+/** Call only after validateBoard() passes. */
 export function toBoardPatch(values: BoardFormValues): BoardSettings {
   return {
     name: values.name.trim(),
@@ -114,7 +106,7 @@ export function toBoardPatch(values: BoardFormValues): BoardSettings {
   };
 }
 
-/** The window in words, or null while it has only one end. */
+/** null while the window has only one end. */
 export function azimuthWindowText(values: Pick<BoardFormValues, 'min_azimuth_deg' | 'max_azimuth_deg'>): string | null {
   const start = toNumber(values.min_azimuth_deg);
   const end = toNumber(values.max_azimuth_deg);

@@ -15,18 +15,15 @@ export interface PluginDataFilters extends RangeQuery {
   cursor?: string;
 }
 
-/** Thrown only if a query that needs both ends runs without them; enabled already prevents it. */
+/** Unreachable: enabled already requires both ends. */
 const NO_RANGE = 'A range needs both ends.';
 
-/**
- * The chart: the server keeps the last state of each interval and sends at
- * most max_points (2000 by default).
- */
+/** Last state per interval, at most max_points (2000 by default). */
 export function useStateSeries(deviceId: string, range: RangeQuery) {
   return useQuery({
     queryKey: ['history', 'series', deviceId, range],
     queryFn: async () => {
-      // The guard narrows from and to, which the schema marks as required here.
+      // Narrows from/to, which the schema requires here.
       if (!hasRange(range)) throw new Error(NO_RANGE);
       return unwrap(
         await api.GET('/api/boards/{device_id}/states/series', { params: { path: { device_id: deviceId }, query: range } }),

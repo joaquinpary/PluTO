@@ -3,14 +3,11 @@ import { api, unwrap } from '../../shared/api/client';
 import { POLL_RETRY } from '../../shared/api/queries';
 import type { BoardSettings } from './boardForm';
 
-// Polling periods. Neither runs while the tab is hidden.
+// Neither polls while the tab is hidden.
 export const LIVE_INTERVAL_MS = 1000;
 export const TRACK_INTERVAL_MS = 5000;
 
-/**
- * GET /api/boards/live every second. With POLL_RETRY, isError means three
- * failures in a row: that is when the Home shows its offline banner.
- */
+/** With POLL_RETRY, isError means 3 failures in a row: the Home's offline banner. */
 export function useBoardsLive() {
   return useQuery({
     queryKey: ['boards', 'live'],
@@ -21,7 +18,7 @@ export function useBoardsLive() {
   });
 }
 
-/** The pass in progress of each board (GET /api/boards/<device_id>/track), every 5 s. */
+/** Each board's pass in progress. */
 export function useTracks(deviceIds: string[]) {
   return useQueries({
     queries: deviceIds.map((device_id) => ({

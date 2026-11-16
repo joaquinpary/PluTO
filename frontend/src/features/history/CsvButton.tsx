@@ -23,11 +23,7 @@ interface Props {
   disabled?: boolean;
 }
 
-/**
- * Downloads a history query as CSV (every row of the range). It goes
- * through the api client like any other call, so it carries the token and
- * shares its single refresh: a plain link could not send the Authorization header.
- */
+/** Through the api client, not a link: a link can't send the Authorization header. */
 export function CsvButton({ download, filename, disabled }: Props) {
   const [busy, setBusy] = useState(false);
 

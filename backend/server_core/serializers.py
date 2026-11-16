@@ -1,9 +1,4 @@
-"""Shapes of the /api/ requests and responses (docs/contracts/ingest-api.md).
-
-The envelope serializers only describe the payload for the OpenAPI schema: the
-envelope is deliberately tolerant, and ingest.envelope_fields is what decides
-which of its keys reach a row.
-"""
+"""Shapes of /api/; envelope serializers only feed the schema, ingest.envelope_fields decides storage."""
 import copy
 
 from django.contrib.auth import get_user_model, password_validation
@@ -53,7 +48,7 @@ class BoardPluginSerializer(serializers.ModelSerializer):
 
 
 class BoardSerializer(serializers.ModelSerializer):
-    # Several instances may be bound to one board; only one runs at a time (RF-31.1).
+    # Several instances per board, only one running (RF-31.1).
     plugins = BoardPluginSerializer(source='plugin_instances', many=True, read_only=True)
 
     class Meta:
@@ -63,12 +58,11 @@ class BoardSerializer(serializers.ModelSerializer):
             'latitude_deg', 'longitude_deg', 'altitude_m',
             'min_elevation_deg', 'min_azimuth_deg', 'max_azimuth_deg', 'plugins',
         ]
-        # What the board reports about itself is not for the user to edit.
+        # Reported by the board.
         read_only_fields = ['device_id', 'online', 'status_changed_at', 'last_state_at']
 
     def validate(self, attrs):
-        # Rotor.clean() on the board as it would be saved, so a PATCH of one end
-        # of the azimuth window is checked against the other end already stored.
+        # Clean the merged rotor so a PATCH of one azimuth end is checked against the stored one.
         rotor = copy.copy(self.instance)
         for name, value in attrs.items():
             setattr(rotor, name, value)
@@ -91,7 +85,7 @@ class BindBoardSerializer(serializers.Serializer):
 
 
 class PluginBoardSerializer(serializers.ModelSerializer):
-    # allow_null only tells the schema the truth: an unbound instance answers null.
+    # allow_null is for the schema: unbound instances answer null.
     board = serializers.SlugRelatedField(source='rotor', slug_field='device_id', read_only=True, allow_null=True)
 
     class Meta:
@@ -100,26 +94,26 @@ class PluginBoardSerializer(serializers.ModelSerializer):
 
 
 class RotorLimitsSerializer(serializers.ModelSerializer):
-    """What a plugin needs to point its board: which board, and where it may look."""
+    """The board a plugin points and its limits."""
 
     class Meta:
         model = Rotor
         fields = ['device_id', 'min_elevation_deg', 'min_azimuth_deg', 'max_azimuth_deg']
 
 
-# The most points one message may carry (coordinates-dto.md §3.1, count).
+# Max points per message (coordinates-dto.md §3.1).
 MAX_DISPATCH_POINTS = 16
 
 
 class DispatchPointField(serializers.ListField):
-    """[dt_ms, az_cdeg, el_cdeg], with the ranges the board accepts (coordinates-dto.md §3.2)."""
+    """[dt_ms, az_cdeg, el_cdeg] within the ranges the board accepts."""
 
     def __init__(self, **kwargs):
         super().__init__(child=serializers.IntegerField(), min_length=3, max_length=3, **kwargs)
 
     def to_internal_value(self, data):
         point = super().to_internal_value(data)
-        # DRF checks min/max_length after this method, too late to unpack safely.
+        # DRF checks the length after this, too late to unpack.
         if len(point) != 3:
             raise serializers.ValidationError('A point is [dt_ms, az_cdeg, el_cdeg].')
         dt_ms, az_cdeg, el_cdeg = point
@@ -133,7 +127,7 @@ class DispatchPointField(serializers.ListField):
 
 
 class DispatchOrderSerializer(serializers.Serializer):
-    """One message a plugin published on device/<device_id>/coordinates/polar."""
+    """A message a plugin published on device/<device_id>/coordinates/polar."""
     kind = serializers.ChoiceField(choices=DispatchOrder.Kind.choices)
     t0_ms = serializers.IntegerField()
     t_sent_ms = serializers.IntegerField(help_text='Taken by the plugin when it published, not when it reports.')
@@ -141,8 +135,7 @@ class DispatchOrderSerializer(serializers.Serializer):
     reason = serializers.ChoiceField(choices=DispatchOrder.Reason.choices, required=False, allow_blank=True, default='')
 
     def validate(self, attrs):
-        # The same shape the board enforces (§6.6): a HOLD carries no points
-        # and says why; a batch carries points.
+        # Same rule as the board: HOLD has a reason and no points, BATCH has points.
         if attrs['kind'] == DispatchOrder.Kind.HOLD:
             if attrs['points']:
                 raise serializers.ValidationError('A HOLD carries no points.')
@@ -166,7 +159,7 @@ class SetupStatusSerializer(serializers.Serializer):
 
 
 def _password_errors(password, user):
-    """What AUTH_PASSWORD_VALIDATORS say about this password, or []."""
+    """AUTH_PASSWORD_VALIDATORS errors, or []."""
     try:
         password_validation.validate_password(password, user=user)
     except DjangoValidationError as exc:
@@ -179,8 +172,7 @@ class SetupSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, trim_whitespace=False, style={'input_type': 'password'})
 
     def validate(self, attrs):
-        # Against the user about to exist, so a password that repeats the
-        # username is caught too.
+        # Validate against the new user so a password equal to the username fails.
         errors = _password_errors(attrs['password'], get_user_model()(username=attrs['username']))
         if errors:
             raise serializers.ValidationError({'password': errors})
@@ -211,7 +203,7 @@ class PasswordChangeSerializer(serializers.Serializer):
 # --- Plugin instances --------------------------------------------------------
 
 class ConfigFieldSerializer(serializers.Serializer):
-    """One entry of a handler's config_fields: what the front end builds the form from."""
+    """A handler config field, for the front end form."""
     name = serializers.CharField(help_text='The key in config.')
     label = serializers.CharField()
     help = serializers.CharField(default='')
@@ -234,13 +226,7 @@ class PluginTypeSerializer(serializers.Serializer):
 
 
 def clean_config(plugin_type, config):
-    """config with the defaults of its type filled in, or ValidationError({'config': {field: [...]}}).
-
-    The same check launch makes (fields.config_errors), on the config as it
-    came: the rules of each field first, then the handler's validate() for the
-    rules that cross fields. The defaults go in only once it passed, so saving
-    and launching never disagree about the same config.
-    """
+    """Validate config like launch does, then fill in the defaults."""
     handler = get_handler(plugin_type)
     if handler is None:
         raise serializers.ValidationError({'plugin_type': [f'Unknown plugin type {plugin_type!r}.']})
@@ -251,14 +237,13 @@ def clean_config(plugin_type, config):
 
 
 def config_warnings(plugin):
-    """What saves fine but will not do what the user expects."""
+    """Config that saves but won't do what the user expects."""
     warnings = []
     plugin_min = (plugin.config or {}).get('min_elevation_deg')
     rotor = plugin.rotor
     is_number = isinstance(plugin_min, (int, float)) and not isinstance(plugin_min, bool)
     if rotor is not None and is_number and plugin_min < rotor.min_elevation_deg:
-        # The antenna cuts a trajectory at its first point below the board's
-        # limit, so a pass that starts lower is dropped whole.
+        # The board drops a pass whose first point is below its limit.
         warnings.append(
             f'min_elevation_deg ({plugin_min:g}) is below the minimum of the board ({rotor.min_elevation_deg:g}): '
             'every pass that starts below the board minimum is dropped.'
@@ -273,7 +258,7 @@ def config_warnings(plugin):
 
 class PluginSerializer(serializers.ModelSerializer):
     plugin_type = serializers.ChoiceField(choices=sorted(PLUGIN_HANDLERS), help_text='Fixed once created: ignored on PATCH.')
-    # allow_null only tells the schema the truth: an unbound instance answers null.
+    # allow_null is for the schema: unbound instances answer null.
     board = serializers.SlugRelatedField(source='rotor', slug_field='device_id', read_only=True, allow_null=True,
                                          help_text='Set with PUT /api/plugins/<uuid>/board.')
     docker_status = serializers.SerializerMethodField(
@@ -292,8 +277,7 @@ class PluginSerializer(serializers.ModelSerializer):
     def get_fields(self):
         fields = super().get_fields()
         if self.instance is not None:
-            # Changing the type of an instance whose container runs would orphan
-            # that container, so the type is decided once, at creation.
+            # Changing the type would orphan a running container.
             fields['plugin_type'].read_only = True
         return fields
 
@@ -372,7 +356,7 @@ class SatelliteSerializer(serializers.Serializer):
 
 
 class BoardLiveSerializer(serializers.ModelSerializer):
-    """A board as the home page polls it. api_boards.BoardsLiveView sets the attributes it reads."""
+    """A board as the home page polls it; BoardsLiveView sets the extra attributes."""
     state = LiveStateSerializer(source='live_state', allow_null=True, read_only=True)
     running_plugin = RunningPluginSerializer(allow_null=True, read_only=True)
     satellite = SatelliteSerializer(allow_null=True, read_only=True)
@@ -401,11 +385,7 @@ class TrackSerializer(serializers.Serializer):
 # --- History (GET /api/boards/<id>/states, /api/orders, /api/plugin-data) ---
 
 class RangeQuerySerializer(serializers.Serializer):
-    """`from` and `to` of a history query, in ISO 8601.
-
-    `from` is a Python keyword, so both are added in get_fields instead of
-    being declared as attributes.
-    """
+    """`from`/`to` of a history query, ISO 8601; set in get_fields since `from` is a keyword."""
     range_required = False
 
     def get_fields(self):
@@ -434,7 +414,7 @@ class StateRowSerializer(serializers.ModelSerializer):
                   'batch_error', 'latency_ms', 'clock_synced', 'err_cdeg']
 
     def get_err_cdeg(self, state) -> int | None:
-        # Only a board with encoders sends it (device-state.md §3).
+        # Only boards with encoders send it.
         return tracking_error(state.payload)
 
 
@@ -474,13 +454,7 @@ class OrderRowSerializer(serializers.ModelSerializer):
 
 
 class PluginDataRowSerializer(serializers.ModelSerializer):
-    """A stored message with the fields worth a column pulled out of its payload.
-
-    The names are the ones the tinyGS fork sends (MQTT_Pluto::publishRx and
-    publishTracking), and satellite has the shape of GET /api/boards/live. Any
-    other plugin type, or a message without them, leaves those columns empty
-    and keeps the whole payload.
-    """
+    """A stored message, with the tinyGS fork's rx/tracking fields pulled out of the payload."""
     plugin = serializers.SlugRelatedField(slug_field='plugin_uuid', read_only=True)
     rssi = serializers.SerializerMethodField()
     snr = serializers.SerializerMethodField()

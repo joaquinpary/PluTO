@@ -17,7 +17,7 @@ interface PasswordForm {
 
 const EMPTY: PasswordForm = { current_password: '', new_password: '', confirm: '' };
 
-/** Django's password validators run on the server and come back as a 400 on new_password. */
+/** Django's password validators answer 400 on new_password. */
 export function validatePasswordForm(values: PasswordForm): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const key of ['current_password', 'new_password', 'confirm'] as const) {

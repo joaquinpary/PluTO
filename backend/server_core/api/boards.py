@@ -1,4 +1,4 @@
-"""The boards for the front end: the list and the scan, their settings, what they are doing now and the pass in course."""
+"""Board endpoints: list, scan, settings, live state and current pass."""
 import logging
 
 from django.db.models import OuterRef, Prefetch, Subquery
@@ -49,7 +49,7 @@ class BoardDetailView(APIView):
 
 
 def _satellite(plugin):
-    """What a running instance follows, from its latest tracking message (only tinygs sends them)."""
+    """Satellite from the instance's latest tracking message (tinygs only)."""
     if plugin is None:
         return None
     payload = (
@@ -69,8 +69,7 @@ class BoardsLiveView(APIView):
         responses=BoardLiveSerializer(many=True),
     )
     def get(self, request):
-        # Each LIMIT 1 subquery walks its board's index from the newest row, so
-        # the cost does not grow with the history.
+        # LIMIT 1 subqueries use the index, so cost doesn't grow with history.
         last_state = RotorState.objects.filter(rotor=OuterRef('pk')).order_by('-received_at').values('pk')[:1]
         last_hold = (
             DispatchOrder.objects.filter(rotor=OuterRef('pk'), kind=DispatchOrder.Kind.HOLD)
@@ -85,7 +84,7 @@ class BoardsLiveView(APIView):
 
         for rotor in rotors:
             rotor.live_state = states.get(rotor.last_state_id)
-            # RF-31.1: at most one running instance drives a board.
+            # RF-31.1: at most one running instance per board.
             rotor.running_plugin = rotor.running_plugins[0] if rotor.running_plugins else None
             rotor.satellite = _satellite(rotor.running_plugin)
             rotor.last_hold_reason = rotor.last_hold_reason or None
@@ -111,8 +110,7 @@ class BoardTrackView(APIView):
         if last_hold is not None:
             batches = batches.filter(created_at__gt=last_hold)
 
-        # Consecutive batches overlap on purpose (coordinates-dto.md §10), so an
-        # instant shows up in up to three rows: the latest one sent is in effect.
+        # Batches overlap on purpose; the latest one sent wins.
         setpoints = {}
         for t0_ms, points in batches.order_by('created_at').values_list('t0_ms', 'points'):
             for dt_ms, az_cdeg, el_cdeg in points:
@@ -154,8 +152,7 @@ class BoardScanView(APIView):
             raise ServiceUnavailable('Could not reach the broker.')
 
         for device_id, payload in found.items():
-            # The same path a live status report takes: registers the board and
-            # moves status_changed_at only on a real change.
+            # Same path as a live status report.
             store_status(device_id, payload)
 
         return _boards_response()

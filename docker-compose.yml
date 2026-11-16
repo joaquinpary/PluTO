@@ -18,9 +18,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     image: pluto/server:latest
-    # gunicorn, not runserver: the front end polls every second while the
-    # plugins ingest. Launching a plugin builds its image the first time and can
-    # take minutes, hence the 600 s timeout, the same as nginx's.
+    # gunicorn, not runserver: the front end polls every second.
+    # 600 s timeout like nginx's: a plugin's first launch builds its image.
     command: sh -c "python manage.py migrate --noinput && exec gunicorn pluto.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 4 --timeout 600"
     environment: *django-env
     depends_on:
@@ -28,7 +27,7 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
-    # Only for working on this same machine. From the LAN, PluTO is the web container.
+    # Localhost only; the LAN goes through web.
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -40,8 +39,7 @@ services:
       - docker-proxy
 
 
-  # The front end: nginx serves the React build and proxies /api/ to the
-  # server. The only port the LAN needs; the phone gets in through it.
+  # nginx: React build + /api/ proxy. The only port the LAN needs.
   web:
     build:
       context: ./frontend
@@ -72,8 +70,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-pluto}
       POSTGRES_USER: ${POSTGRES_USER:-pluto}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
-    # No published port: services reach it on pluto-network. For a shell use
-    #   docker compose exec postgres psql -U pluto pluto
+    # Not published. Shell: docker compose exec postgres psql -U pluto pluto
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s

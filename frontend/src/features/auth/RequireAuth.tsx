@@ -3,10 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useHasSession } from '../../shared/api/auth';
 import { useSetupStatus } from '../../shared/api/queries';
 
-/**
- * The gate in front of the app: a fresh install goes to /setup, a visitor
- * without a session to /login (which comes back to `from`), and the rest in.
- */
+/** No user yet: /setup. No session: /login, which returns to `from`. */
 export function RequireAuth() {
   const location = useLocation();
   const setup = useSetupStatus();

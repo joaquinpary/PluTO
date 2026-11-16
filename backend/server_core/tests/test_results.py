@@ -33,7 +33,7 @@ def hold(t_sent_ms, reason=DispatchOrder.Reason.END):
 
 class SkyDistanceTests(SimpleTestCase):
     def test_the_examples_of_the_contract(self):
-        # device-state.md §4.2: north does not jump, the zenith does not explode.
+        # North doesn't jump, the zenith doesn't explode.
         self.assertEqual(sky_distance_cdeg(35990, 3000, 10, 3000), 17)
         self.assertEqual(sky_distance_cdeg(0, 8950, 18000, 8950), 100)
 
@@ -65,7 +65,7 @@ class SplitPassesTests(SimpleTestCase):
 
         passes = split_passes([first, second, end, expired, third, limits, fourth])
 
-        # The HOLD without batches and the batch still waiting for its HOLD are not passes.
+        # A lone HOLD and an open batch aren't passes.
         self.assertEqual(passes, [([first, second], end), ([third], limits)])
 
 
@@ -110,7 +110,7 @@ class PointingErrorTests(TestCase):
     def test_with_meas_it_takes_the_error_the_board_measured(self):
         self.state(T0_MS + 500, 9050, 3050, meas={'az_cdeg': 9040, 'el_cdeg': 3030}, err_cdeg=30)
         self.state(T0_MS + 1000, 9100, 3100, meas={'az_cdeg': 9090, 'el_cdeg': 3080}, err_cdeg=50)
-        # A tick without a reading does not turn the pass into a commanded one.
+        # A tick without a reading doesn't make the pass commanded.
         self.state(T0_MS + 1500, 9150, 3150, meas=None, err_cdeg=None)
 
         passes = pointing_error(self.rotor, START, END)

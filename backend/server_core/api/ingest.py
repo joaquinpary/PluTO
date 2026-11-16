@@ -1,7 +1,6 @@
-"""What the plugin containers send: their data, their board's reports and their dispatch orders.
+"""Plugin endpoints: data, board reports and dispatch orders.
 
-Every view here authenticates with `Authorization: Plugin <token>`: the token
-decides the instance, and the instance decides the board.
+Auth is `Authorization: Plugin <token>`; the token decides instance and board.
 """
 import json
 import logging

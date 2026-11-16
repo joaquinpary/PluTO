@@ -3,10 +3,8 @@ import { api, unwrap } from '../../shared/api/client';
 import { POLL_RETRY } from '../../shared/api/queries';
 import type { Plugin, PluginFilters } from '../../shared/api/types';
 
-// Not while the tab is hidden.
 export const PLUGINS_INTERVAL_MS = 5000;
 
-/** GET /api/plugins every 5 s, with the list's filters. */
 export function usePlugins(filters: PluginFilters = {}) {
   return useQuery({
     queryKey: ['plugins', filters],
@@ -21,7 +19,7 @@ export type PluginAction = 'launch' | 'stop' | 'sync';
 
 export interface PluginInput {
   name: string;
-  /** The enum the schema declares: PluginSerializer.plugin_type is a ChoiceField. */
+  /** A ChoiceField in PluginSerializer, so an enum. */
   plugin_type: Plugin['plugin_type'];
   config: Record<string, unknown>;
 }
@@ -46,7 +44,7 @@ export function usePlugin(uuid: string) {
   });
 }
 
-/** After any change to an instance: its lists, its detail and the boards that show it. */
+/** Instance lists, detail and boards. */
 function useRefreshPlugins() {
   const queryClient = useQueryClient();
   return () =>
@@ -92,7 +90,7 @@ export function useDeletePlugin() {
     mutationFn: async (uuid: string) => unwrap(await api.DELETE('/api/plugins/{plugin_uuid}', pluginPath(uuid))),
     onSuccess: () =>
       Promise.all([
-        // Not the detail: the instance is gone, and it would answer 404 before the page leaves.
+        // Not the detail: it would 404 before the page leaves.
         queryClient.invalidateQueries({ predicate: ({ queryKey }) => queryKey[0] === 'plugins' && queryKey[1] !== 'detail' }),
         queryClient.invalidateQueries({ queryKey: ['boards'] }),
       ]),
@@ -118,8 +116,7 @@ export function useUploadCoordinates(uuid: string) {
       return unwrap(
         await api.POST('/api/plugins/{plugin_uuid}/coordinates-file', {
           ...pluginPath(uuid),
-          // openapi-typescript types a binary field as a string; what goes on
-          // the wire is the FormData, and the browser sets its multipart boundary.
+          // The schema types the binary as string; send FormData so the browser sets the boundary.
           body: form as never,
           bodySerializer: (body) => body,
         }),

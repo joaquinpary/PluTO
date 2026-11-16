@@ -11,8 +11,7 @@ from datetime import datetime, timezone
 
 SCHEMA_VERSION = 1
 
-# base64 inflates by 33% and every message becomes a PostgreSQL row, so a
-# board with broken firmware must not be able to fill the table.
+# base64 adds 33% and every message is a row: broken firmware must not fill the table.
 MAX_PAYLOAD_BYTES = 64 * 1024
 PREVIEW_BYTES = 1024
 
@@ -21,12 +20,8 @@ def normalize_payload(raw):
     """Turn the board's raw bytes into (dict, payload_format).
 
     The result is always a dict: the server stores it in a column that holds
-    a JSON object, so a bare list or scalar is wrapped. Note that
-    json.loads(b"42") returns 42 and json.loads(b"null") returns None -- both
-    are valid JSON and neither is a dict.
-
-    Text carrying U+0000 goes as binary too: PostgreSQL's jsonb rejects that
-    character, and base64 keeps the bytes intact.
+    a JSON object, so a bare list or scalar is wrapped. Text with U+0000 goes
+    as binary: jsonb rejects it.
     """
     size = len(raw)
 
@@ -64,9 +59,8 @@ def _binary(raw):
 
 
 def _has_nul(payload):
-    # json.dumps writes U+0000 as the escape \u0000. An escaped backslash
-    # followed by "u0000" matches too; that only sends the text as binary,
-    # which loses nothing.
+    # json.dumps escapes U+0000 as \u0000. An escaped backslash before "u0000"
+    # also matches, which only sends the text as binary.
     return '\\u0000' in json.dumps(payload)
 
 

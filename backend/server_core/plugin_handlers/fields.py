@@ -1,29 +1,23 @@
-"""The settings a plugin type declares, and the checks they imply.
-
-A handler lists its settings in config_fields. The front end builds the form
-from them, and validate_config applies the same rules when the configuration is
-saved, so a mistake shows up next to its field instead of when the container
-starts. Rules that relate several settings stay in the handler's validate().
-"""
+"""Declared plugin config fields and their checks; cross-field rules stay in validate()."""
 import re
 
 FIELD_TYPES = ('string', 'integer', 'number', 'boolean', 'choice')
 
 REQUIRED = 'This field is required.'
 
-# Every key a field carries besides name, label and type, with its value when unset.
+# Optional keys and their defaults.
 _OPTIONS = {'help': '', 'required': False, 'default': None, 'min': None, 'max': None, 'choices': None, 'pattern': None}
 
 
 def config_field(name, label, field_type, **options):
-    """One entry of config_fields, with every key present so the API always sends the same shape."""
+    """A config_fields entry with every key set, so the API shape is stable."""
     if field_type not in FIELD_TYPES or not set(options) <= set(_OPTIONS):
         raise ValueError(f'Bad declaration of the config field {name!r}.')
     return {'name': name, 'label': label, 'type': field_type, **_OPTIONS, **options}
 
 
 def apply_defaults(fields, config):
-    """A copy of config with the default of every declared field it leaves out or sets to None."""
+    """Copy of config with defaults for missing or None fields."""
     result = dict(config)
     for field in fields:
         if field['default'] is not None and result.get(field['name']) is None:
@@ -32,7 +26,7 @@ def apply_defaults(fields, config):
 
 
 def _is_number(value):
-    # bool is an int in Python, and true is not a number of minutes.
+    # bool is an int in Python.
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
@@ -62,11 +56,7 @@ def _field_errors(field, value):
 
 
 def validate_config(fields, config):
-    """{name: [messages]} for every declared field config breaks; {} when it is valid.
-
-    None and '' count as missing, which only a required field minds. Keys no
-    field declares are left alone.
-    """
+    """{name: [messages]} per invalid field; None and '' count as missing."""
     errors = {}
     for field in fields:
         value = config.get(field['name'])
@@ -81,11 +71,7 @@ def validate_config(fields, config):
 
 
 def config_errors(handler, config):
-    """Everything wrong with config for this plugin type, as a DRF-style error dict.
-
-    The declared fields first; the handler's validate() only once they pass,
-    so it may take every field as valid. Its message goes under non_field_errors.
-    """
+    """DRF-style errors for config; handler.validate() runs only once the fields pass."""
     if not isinstance(config, dict):
         return {'non_field_errors': ['The configuration must be a JSON object.']}
     errors = validate_config(handler.config_fields, config)

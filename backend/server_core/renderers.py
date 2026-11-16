@@ -1,4 +1,4 @@
-"""?format=csv on the history endpoints: the same rows as the JSON, one per line."""
+"""?format=csv for the history endpoints."""
 import csv
 import io
 import json
@@ -12,7 +12,7 @@ class CSVRenderer(BaseRenderer):
     charset = 'utf-8'
 
     def render(self, data, accepted_media_type=None, renderer_context=None):
-        # Rows come as {"results": [...]}; anything else, like an error, is one row.
+        # Anything but {"results": [...]}, like an error, is one row.
         if isinstance(data, dict):
             rows = data['results'] if 'results' in data else [data]
         else:
@@ -24,7 +24,7 @@ class CSVRenderer(BaseRenderer):
             if writer is None:
                 writer = csv.DictWriter(out, fieldnames=list(row))
                 writer.writeheader()
-            # A nested value (a payload, a list of errors) goes as JSON in its cell.
+            # Nested values go as JSON.
             writer.writerow({
                 key: json.dumps(value) if isinstance(value, (dict, list)) else value
                 for key, value in row.items()

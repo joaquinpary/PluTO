@@ -3,7 +3,7 @@ import { skyXY } from './sky';
 export type SkyAntenna = { id: string; label: string; az_cdeg: number; el_cdeg: number };
 export type SkyTrack = { id: string; points: { az_cdeg: number; el_cdeg: number }[] };
 
-const R = 100; // the horizon's radius, in SVG units
+const R = 100; // horizon radius, SVG units
 
 function xy(az_cdeg: number, el_cdeg: number, radius = R) {
   return skyXY(az_cdeg / 100, el_cdeg / 100, radius);

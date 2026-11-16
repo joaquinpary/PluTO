@@ -42,8 +42,7 @@ class DownsampleTests(SimpleTestCase):
         self.assertEqual(downsample(data, 't', 2), [data[-1]])
 
     def test_an_iterator_with_its_bounds_is_thinned_the_same_way(self):
-        # What the series view passes: a queryset iterator, plus the first
-        # instant, the last one and the count, which it asks the database for.
+        # Like the series view: an iterator plus start, end and count.
         data = rows(*range(10))
 
         result = downsample(iter(data), 't', 5, start=0, end=9, count=10)

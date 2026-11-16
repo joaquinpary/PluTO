@@ -9,5 +9,5 @@ PLUGIN_HANDLERS = {
 
 
 def get_handler(plugin_type):
-    """The handler of a plugin type, or None if PluTO does not know the type."""
+    """Handler for a plugin type, or None."""
     return PLUGIN_HANDLERS.get(plugin_type)

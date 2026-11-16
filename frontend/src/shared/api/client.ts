@@ -2,13 +2,12 @@ import createClient, { type Middleware } from 'openapi-fetch';
 import type { paths } from './schema';
 import { getAccess, refreshOnce } from './tokens';
 
-// A copy of each request as it was sent, to repeat it after a refresh:
-// fetch() consumes the body of the original.
+// fetch() consumes the body, so keep a copy to retry after a refresh.
 const copies = new WeakMap<Request, Request>();
 
 const auth: Middleware = {
   onRequest({ request, schemaPath }) {
-    // Log in, refresh and log out need no access token, and their 401 means bad credentials.
+    // Their 401 means bad credentials, not an expired token.
     if (schemaPath.startsWith('/api/auth/token')) return undefined;
     const token = getAccess();
     if (token !== null) request.headers.set('Authorization', `Bearer ${token}`);
@@ -26,19 +25,19 @@ const auth: Middleware = {
     if (!alreadyRenewed && !(await refreshOnce())) return response;
 
     copy.headers.set('Authorization', `Bearer ${getAccess()}`);
-    return fetch(copy); // Once: if this one is also refused, the caller gets that answer.
+    return fetch(copy); // once; a second 401 goes to the caller
   },
 };
 
 export const api = createClient<paths>({
-  // Absolute, because Node's fetch (the tests) does not resolve relative URLs.
+  // Absolute: Node's fetch (tests) doesn't resolve relative URLs.
   baseUrl: window.location.origin,
-  // Looked up on every call instead of captured now, so the tests' MSW sees it.
+  // Read per call so MSW can patch it in tests.
   fetch: (request) => globalThis.fetch(request),
 });
 api.use(auth);
 
-/** A non-2xx answer: status and the parsed body, e.g. {"detail": "..."} or {"field": ["..."]}. */
+/** Non-2xx answer with its parsed body. */
 export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
@@ -50,13 +49,13 @@ export class ApiError extends Error {
   }
 }
 
-/** The data of an openapi-fetch result, or an ApiError: what a queryFn returns. */
+/** For queryFns: the data, or throws ApiError. */
 export function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
   if (!result.response.ok) throw new ApiError(result.response.status, result.error);
   return result.data as T;
 }
 
-/** DRF's validation errors ({"field": ["msg", ...]}) as one message per field, plus detail. */
+/** DRF {"field": ["msg", ...]} to one message per field. */
 export function fieldErrors(body: unknown): Record<string, string> {
   if (typeof body !== 'object' || body === null) return {};
   const errors: Record<string, string> = {};

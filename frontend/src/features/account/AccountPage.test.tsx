@@ -61,7 +61,7 @@ describe('AccountPage', () => {
     expect(await screen.findByText('Contraseña cambiada.')).toBeInTheDocument();
     expect(bodies[1]).toEqual({ current_password: 'vieja-1234', new_password: 'nueva-segura-5678' });
     expect(screen.getByLabelText('Contraseña actual')).toHaveValue('');
-    // The server ended every session, this one included: it lives on with the new pair.
+    // Every session ended; this one lives on with the new pair.
     expect(localStorage.getItem(REFRESH_KEY)).toBe('r9');
   });
 

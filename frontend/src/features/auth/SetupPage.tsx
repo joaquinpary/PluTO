@@ -18,7 +18,7 @@ export function SetupPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
-  // Also how a successful submit leaves: logged in, to the start page.
+  // Also how a successful submit leaves.
   if (setup.data && !setup.data.needs_setup) return <Navigate to={hasSession ? '/' : '/login'} replace />;
 
   async function submit(event: FormEvent) {

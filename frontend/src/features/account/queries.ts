@@ -6,7 +6,7 @@ export function useChangePassword() {
   return useMutation({
     mutationFn: async (body: { current_password: string; new_password: string }) =>
       unwrap(await api.POST('/api/auth/password', { body })),
-    // The server ended every session, this one included, and sent a new pair for it.
+    // Every session ended; the server sent a new pair for this one.
     onSuccess: (tokens) => setTokens(tokens),
   });
 }

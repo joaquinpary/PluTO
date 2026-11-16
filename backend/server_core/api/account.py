@@ -1,8 +1,4 @@
-"""The account endpoints of the front end: healthcheck, first-run setup and password change.
-
-health and setup are open, and do not even read the Authorization header: a
-stale token left in the browser must not turn them into a 401.
-"""
+"""Health, first-run setup and password; health and setup skip auth so a stale token can't 401."""
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, connection, transaction
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -16,7 +12,7 @@ from ..serializers import HealthSerializer, PasswordChangeSerializer, SetupSeria
 from .exceptions import Conflict
 
 
-# Any constant: the key of the Postgres advisory lock that serialises first-run setups.
+# Advisory lock key that serialises first-run setups.
 SETUP_LOCK = 0x504C55544F  # 'PLUTO'
 
 
@@ -63,8 +59,7 @@ class SetupView(OpenView):
         serializer = SetupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
-            # Two setups at once must not both pass the check: the second waits
-            # here and then finds the first user. Released at the end of the transaction.
+            # Concurrent setups wait here and then see the first user.
             with connection.cursor() as cursor:
                 cursor.execute('SELECT pg_advisory_xact_lock(%s)', [SETUP_LOCK])
             if User.objects.exists():
@@ -90,7 +85,7 @@ class PasswordView(APIView):
         serializer.is_valid(raise_exception=True)
         request.user.set_password(serializer.validated_data['new_password'])
         request.user.save(update_fields=['password'])
-        # A refresh token left on a lost phone would otherwise keep renewing itself.
+        # Otherwise a refresh token on a lost phone keeps renewing itself.
         for token in OutstandingToken.objects.filter(user=request.user):
             BlacklistedToken.objects.get_or_create(token=token)
         refresh = RefreshToken.for_user(request.user)

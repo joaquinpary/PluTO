@@ -8,7 +8,7 @@ from ..models import Rotor, RotorState
 
 DEVICE_ID = 'a1b2c3d4e5f6'
 
-# What the firmware publishes right after accepting a batch (device-state.md §3).
+# What the firmware publishes after accepting a batch.
 STATE = {
     'v': 1,
     'ts_ms': 1789763398140,

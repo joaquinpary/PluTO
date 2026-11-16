@@ -123,7 +123,7 @@ class PairHandler(BasePluginHandler):
 
 class ConfigErrorsTests(SimpleTestCase):
     def test_the_fields_come_first_and_spare_validate_a_broken_config(self):
-        # validate() reads config['high'] without checking: it may take every field as valid.
+        # validate() trusts config['high'], so it must only run once the fields pass.
         self.assertEqual(config_errors(PairHandler(), {'low': 1}), {'high': [REQUIRED]})
 
     def test_a_rule_across_fields_is_a_non_field_error(self):

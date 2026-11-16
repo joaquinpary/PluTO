@@ -3,20 +3,15 @@ from abc import ABC
 
 
 class BasePluginHandler(ABC):
-    # The name the front end shows for the type.
     label = ""
-    # The settings of the type (fields.config_field). The front end builds its
-    # form from them and fields.validate_config checks them on save.
+    # fields.config_field entries; the front end builds its form from them.
     config_fields = ()
     # The message types this plugin may send to /api/plugin-data/<type>. None
     # accepts any type the URL pattern allows; an empty tuple, none at all.
     allowed_message_types = None
 
     def validate(self, config):
-        """A rule that relates several settings was broken: its message, or None.
-
-        Runs once the declared fields passed (fields.config_errors), on save and on launch.
-        """
+        """Cross-field check, run after the fields pass: an error message or None."""
         return None
 
     def validate_data(self, message_type, payload):

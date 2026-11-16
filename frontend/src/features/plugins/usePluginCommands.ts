@@ -15,15 +15,8 @@ const FAILED: Record<PluginAction, string> = {
   sync: 'No se pudo sincronizar',
 };
 
-/**
- * Launch answers 409 when the instance already runs or another running
- * instance drives its board (RF-31.1), in English. The 409 is said in
- * Spanish, naming that other instance when the pages already know it.
- *
- * A launch that got no answer from Django (nginx gave up after 600 s, or the
- * connection dropped) may still have worked: the container could be up, and
- * Sync tells. A 502 that does carry a detail is Docker failing.
- */
+// 409: already running, or another instance drives the board (RF-31.1).
+// No answer (nginx timeout, dropped connection) may still have launched, so point to Sync.
 export function launchErrorMessage(error: unknown, driver?: string): string {
   if (isStatus(error, 409)) {
     return driver
@@ -37,10 +30,7 @@ export function launchErrorMessage(error: unknown, driver?: string): string {
     : errorMessage(error);
 }
 
-/**
- * The other running instance on the same board, from what the pages already
- * loaded (an instance list or the board list): no extra request.
- */
+/** The other running instance on this board, from cached queries: no extra request. */
 function boardDriver(queryClient: QueryClient, plugin: Target): string | undefined {
   if (!plugin.board) return undefined;
   const isDriver = (other: { plugin_uuid: string; status?: string }) =>
@@ -55,7 +45,7 @@ function boardDriver(queryClient: QueryClient, plugin: Target): string | undefin
   return boards?.find((board) => board.device_id === plugin.board)?.plugins.find(isDriver)?.name;
 }
 
-/** Launch, stop and sync with their notices; the list and the detail use them. */
+/** Shared by the list and the detail. */
 export function usePluginCommands() {
   const mutation = usePluginAction();
   const queryClient = useQueryClient();

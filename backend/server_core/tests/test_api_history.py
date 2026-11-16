@@ -90,7 +90,7 @@ class BoardStatesTests(FrontTestCase):
             lines[0],
             'received_at,mode,az_cdeg,el_cdeg,pan_mode,batch_accepted,batch_error,latency_ms,clock_synced,err_cdeg',
         )
-        # Not a page: the header and all 150 rows.
+        # Not paginated: header plus all 150 rows.
         self.assertEqual(len(lines), 151)
         self.assertTrue(lines[1].startswith(f'{iso(at(0))},tracking,0,4500,'))
 
@@ -112,7 +112,7 @@ class LongRangeTests(FrontTestCase):
             first = self.client.get(self.url).json()
 
         self.assertEqual(len(first['results']), 100)
-        # The page plus the one row that says there is a next page.
+        # The page plus one row to detect a next page.
         self.assertLessEqual(from_db.call_count, 101)
         self.assertEqual(first['results'][0]['received_at'], iso(at(DAY - 1)))
 
@@ -140,7 +140,7 @@ class LongRangeTests(FrontTestCase):
 
         self.assertEqual(response.status_code, 200)
         rows = thin.call_args.args[0]
-        # A list would hold the 86 400 rows at once; the iterator hands them over one chunk at a time.
+        # A list would hold all 86 400 rows at once.
         self.assertNotIsInstance(rows, (list, tuple))
         self.assertEqual(thin.call_args.kwargs['count'], DAY)
 
@@ -224,9 +224,7 @@ class PluginDataHistoryTests(FrontTestCase):
         })
 
     def test_missing_or_odd_fields_are_null_and_the_payload_stays(self):
-        # An rx without rssi, a tracking without a satellite, the
-        # placeholder a station sends before it gets one, a payload the ingester
-        # wrapped, odd types, and a plugin type nobody knows.
+        # Missing fields, the "Waiting" placeholder, wrapped payloads, odd types, unknown plugin type.
         weather = PluginInstance.objects.create(name='weather-1', plugin_type='weather')
         payloads = [
             {},
@@ -301,8 +299,7 @@ class HistoryAuthTests(FrontTestCase):
 
 
 class CsvRangeTests(FrontTestCase):
-    """A CSV is built whole before it is sent: an open or months-long range would
-    outlast nginx's 600 s and hold the rows in memory, so exports ask for a week at most."""
+    """CSV exports are capped at a week so building them fits nginx's 600 s."""
 
     def test_an_export_needs_both_ends_of_the_range(self):
         Rotor.objects.create(device_id=DEVICE_ID)

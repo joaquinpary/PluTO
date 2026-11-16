@@ -40,7 +40,7 @@ def parse_device_topic(topic):
 
 
 def store_status(device_id, payload):
-    """Apply an online/offline message. Returns False if the payload is not one."""
+    """Apply an online/offline message; False if it is neither."""
     online = STATUSES.get(payload.decode('utf-8', errors='replace').strip())
     if online is None:
         logger.warning('Ignoring unknown status %r from %s', payload[:32], device_id)
@@ -58,7 +58,7 @@ def store_status(device_id, payload):
 
 
 def _int(value):
-    # bool is an int in Python, and true is not a number of milliseconds.
+    # bool is an int in Python.
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
@@ -80,11 +80,7 @@ def _board_time(ts_ms):
 
 
 def store_state(device_id, payload):
-    """Store one state document. Returns False if it is not a JSON object.
-
-    Fields with an unexpected type are stored as empty rather than rejecting
-    the whole document: the raw document is kept in `payload` either way.
-    """
+    """Store a state document; False if not a JSON object. Badly typed fields are stored empty."""
     try:
         document = json.loads(payload.decode('utf-8'))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -119,12 +115,7 @@ def store_state(device_id, payload):
 
 
 def measured_position(document):
-    """meas of a state document as {'az_cdeg', 'el_cdeg'}, or None.
-
-    Only a board with encoders sends it (KAN-22, the B5 draft of
-    device-state.md); anything malformed reads as no measurement, the same as
-    a document from an older firmware.
-    """
+    """meas as {'az_cdeg', 'el_cdeg'}, or None if missing or malformed (encoders only, KAN-22)."""
     meas = document.get('meas') if isinstance(document, dict) else None
     if not isinstance(meas, dict):
         return None
@@ -135,5 +126,5 @@ def measured_position(document):
 
 
 def tracking_error(document):
-    """err_cdeg of a state document, or None when the board measured none."""
+    """err_cdeg of a state document, or None."""
     return _int(document.get('err_cdeg')) if isinstance(document, dict) else None
