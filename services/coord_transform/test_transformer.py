@@ -13,7 +13,6 @@ class TestTransformer(unittest.TestCase):
         self.timestamp = datetime(2026, 5, 8, 15, 0, 0, tzinfo=timezone.utc)
 
     def test_enu_to_polar_north(self):
-        # Punto directamente al norte, a 100km, elevación 0
         pt = CartesianCoordinatePoint(timestamp=self.timestamp, x=0.0, y=100.0, z=0.0)
         polar = transform_enu_cartesian_to_polar(pt, self.station)
         
@@ -22,12 +21,11 @@ class TestTransformer(unittest.TestCase):
         self.assertAlmostEqual(polar.range, 100.0, places=2)
 
     def test_enu_to_polar_east(self):
-        # Punto directamente al este, a 50km, 50km arriba
         pt = CartesianCoordinatePoint(timestamp=self.timestamp, x=50.0, y=0.0, z=50.0)
         polar = transform_enu_cartesian_to_polar(pt, self.station)
         
         self.assertAlmostEqual(polar.az, 90.0, places=2)
-        self.assertAlmostEqual(polar.el, 45.0, places=2) # 45 grados de elevación
+        self.assertAlmostEqual(polar.el, 45.0, places=2)
         self.assertAlmostEqual(polar.range, math.sqrt(50**2 + 50**2), places=2)
 
     def test_polar_pass_through(self):

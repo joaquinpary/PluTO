@@ -1,4 +1,4 @@
-/** How the pages turn a failed call (an ApiError from unwrap, or a network TypeError) into text. */
+/** ApiError or network TypeError into text for the pages. */
 import { ApiError } from './client';
 
 export function isStatus(error: unknown, status: number): error is ApiError {
@@ -18,11 +18,7 @@ const joined = (messages: unknown): string =>
 
 const GENERAL_KEYS = new Set(['detail', 'non_field_errors']);
 
-/**
- * Splits a DRF error body into messages per field and general messages.
- * The config of a plugin comes back nested ({"config": {"tinygs_device": [...]}}),
- * so its keys land next to the top-level ones, where the form shows them.
- */
+/** Plugin config errors come nested ({"config": {...}}), so they're flattened next to the top-level fields. */
 export function splitErrors(body: unknown): SplitErrors {
   const result: SplitErrors = { fields: {}, general: [] };
   if (!isObject(body)) return result;

@@ -56,8 +56,7 @@ class LocationMigrationTests(TransactionTestCase):
     after = [('server_core', '0009_move_station_to_rotor')]
 
     def setUp(self):
-        # A cleanup and not tearDown: it also runs when setUp fails halfway,
-        # and every later test needs the database at its latest migration.
+        # addCleanup runs even if setUp fails; later tests need the latest migration.
         self.addCleanup(self.migrate_to_latest)
         executor = MigrationExecutor(connection)
         executor.migrate(self.before)
@@ -77,7 +76,7 @@ class LocationMigrationTests(TransactionTestCase):
         OldPlugin.objects.create(name='never-set', plugin_type='tinygs', rotor=never_set)
         OldPlugin.objects.create(name='no-board', plugin_type='tinygs', station_lat=5.0, station_lon=5.0)
 
-        # A new executor: the old one still believes the database is at 0008.
+        # Fresh executor: the old one thinks the DB is at 0008.
         executor = MigrationExecutor(connection)
         executor.migrate(self.after)
         self.apps = executor.loader.project_state(self.after).apps

@@ -9,10 +9,10 @@ from .plugin_handlers import PLUGIN_HANDLERS
 
 logger = logging.getLogger(__name__)
 
-# Every plugin container is named plugin-<type>-<uuid> (container_name).
+# Containers are named plugin-<type>-<uuid>.
 PLUGIN_CONTAINER_PREFIX = "plugin-"
 
-# PluTO's own compose services whose logs the front end shows.
+# Compose services whose logs the front end shows.
 LOG_SERVICES = ("server", "coord_transform")
 
 
@@ -146,8 +146,7 @@ class PluginOrchestrator:
             "PLUTO_API_URL": settings.PLUTO_API_URL,
             "PLUTO_TRANSFORM_URL": settings.PLUTO_TRANSFORM_URL,
         }
-        # Without a location the plugin gets none of these: tinygs then relays
-        # packets and computes no passes, file_tracker falls back to (0, 0, 0).
+        # Without a location tinygs computes no passes and file_tracker uses (0, 0, 0).
         if normalized_station is not None:
             environment.update({
                 "STATION_COORDINATES": json.dumps(normalized_station),
@@ -222,16 +221,11 @@ class PluginOrchestrator:
             return False, "unknown"
 
     def container_statuses(self):
-        """The Docker status of every plugin container, by container name (KAN-50).
-
-        One request for the whole list instead of one per instance. None when
-        Docker cannot be asked, so a caller can tell "unknown" from "no container".
-        """
+        """Status of every plugin container by name in one request (KAN-50); None if Docker is down."""
         if self.client is None:
             return None
         try:
-            # sparse: the list answer already carries names and states; without
-            # it the SDK inspects every container, one request each.
+            # sparse avoids one inspect request per container.
             containers = self.client.containers.list(all=True, sparse=True)
         except docker.errors.APIError as exc:
             logger.error(f"Error listing the plugin containers: {exc}")
@@ -246,7 +240,7 @@ class PluginOrchestrator:
         return statuses
 
     def container_logs(self, plugin_type, instance_id, tail):
-        """The last `tail` lines a plugin container logged, or None without a container."""
+        """Last `tail` log lines of a plugin container, or None."""
         if self.client is None:
             return None
         try:
@@ -259,18 +253,13 @@ class PluginOrchestrator:
         return self._read_logs(container, tail)
 
     def service_logs(self, service, tail):
-        """The last `tail` lines of one of PluTO's own services, or None.
-
-        Found by the label compose puts on its containers. PluTO already
-        assumes one stack per Docker host (pluto-network, the plugin container
-        names), so the first match is the one.
-        """
+        """Last `tail` log lines of a compose service, or None; assumes one stack per Docker host."""
         if service not in LOG_SERVICES or self.client is None:
             return None
         try:
             containers = self.client.containers.list(all=True, filters={"label": [
                 f"com.docker.compose.service={service}",
-                # Not a `docker compose run` of the same service, e.g. the test suite.
+                # Skip `docker compose run` containers, e.g. the test suite.
                 "com.docker.compose.oneoff=False",
             ]})
         except docker.errors.APIError as exc:
@@ -286,5 +275,5 @@ class PluginOrchestrator:
         except docker.errors.APIError as exc:
             logger.error(f"Error reading logs: {exc}")
             return None
-        # A container may log anything; one byte that is not UTF-8 must not cost the page.
+        # Don't fail the page on non-UTF-8 bytes.
         return raw.decode("utf-8", errors="replace").splitlines()

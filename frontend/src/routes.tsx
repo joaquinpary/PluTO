@@ -13,7 +13,6 @@ import { PluginNewPage } from './features/plugins/PluginNewPage';
 import { PluginsPage } from './features/plugins/PluginsPage';
 import { SetupPage } from './features/auth/SetupPage';
 
-// One route per screen.
 export const routes: RouteObject[] = [
   { path: '/setup', element: <SetupPage /> },
   { path: '/login', element: <LoginPage /> },

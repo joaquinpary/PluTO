@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { api } from './client';
 import { clearTokens, getRefresh, hasSession, setTokens, subscribe } from './tokens';
 
-/** Logs in and keeps the tokens. false when Django rejects the credentials. */
+/** false on bad credentials. */
 export async function login(username: string, password: string): Promise<boolean> {
   const { data, response } = await api.POST('/api/auth/token', { body: { username, password } });
   if (data !== undefined) {

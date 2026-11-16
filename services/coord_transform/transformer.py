@@ -18,23 +18,20 @@ from models import (
 
 logger = logging.getLogger(__name__)
 
-# Cargar la escala de tiempo (se descargará un archivo leapseconds la primera vez)
+# Descarga leapseconds la primera vez
 ts = load.timescale()
 
-# Distancia en km de 1 UA (para conversión de skyfield)
 AU_KM = 149597870.700
 
 def transform_eci_cartesian_to_polar(point: CartesianCoordinatePoint, station: Station) -> PolarCoordinatePoint:
     t = ts.from_datetime(point.timestamp)
     
-    # Skyfield maneja ICRF (similar a ECI) en Unidades Astronómicas (AU)
+    # Skyfield usa ICRF (~ECI) en UA
     pos_au = [point.x / AU_KM, point.y / AU_KM, point.z / AU_KM]
     geo = Geocentric(pos_au, t=t)
     
-    # Definir la estación
     observer = wgs84.latlon(station.lat, station.lon, elevation_m=station.alt)
     
-    # Calcular altitud (elevación) y azimuth
     difference = geo - observer.at(t)
     alt, az, distance = difference.altaz()
     
@@ -64,7 +61,6 @@ def transform_ecef_cartesian_to_polar(point: CartesianCoordinatePoint, station: 
     n = -slat * clon * dx - slat * slon * dy + clat * dz
     u = clat * clon * dx + clat * slon * dy + slat * dz
     
-    # Transformar el resultante ENU a Polar (simulando un CartesianCoordinatePoint de tipo ENU)
     enu_point = CartesianCoordinatePoint(timestamp=point.timestamp, x=e, y=n, z=u)
     return transform_enu_cartesian_to_polar(enu_point, station)
 
@@ -73,7 +69,6 @@ def transform_ecef_geo_to_polar(point: GeoCoordinatePoint, station: Station) -> 
     target = wgs84.latlon(point.lat, point.lon, elevation_m=point.alt)
     observer = wgs84.latlon(station.lat, station.lon, elevation_m=station.alt)
     
-    # Difference
     diff = target.at(t) - observer.at(t)
     alt, az, distance = diff.altaz()
     

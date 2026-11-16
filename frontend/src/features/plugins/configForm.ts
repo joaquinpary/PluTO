@@ -1,11 +1,6 @@
-/**
- * The form of a plugin's config, built from the config_fields its type
- * declares (GET /api/plugin-types). validate() mirrors validate_config in
- * server_core/plugin_handlers/fields.py, so most mistakes show up next to the
- * field before any request; the server checks again and has the last word.
- */
+// validate() mirrors plugin_handlers/fields.py; the server checks again.
 
-/** Lenient on purpose: the generated ConfigField of schema.d.ts fits in it. */
+/** Loose so the generated ConfigField fits. */
 export interface ConfigField {
   name: string;
   label?: string;
@@ -16,9 +11,9 @@ export interface ConfigField {
   default?: unknown;
   min?: number | null;
   max?: number | null;
-  /** [value, label] pairs, for 'choice'. */
+  /** [value, label] pairs. */
   choices?: readonly (readonly unknown[])[] | null;
-  /** Matched against the whole value, like Python's re.fullmatch. */
+  /** Full match, like re.fullmatch. */
   pattern?: string | null;
 }
 
@@ -30,7 +25,7 @@ export const REQUIRED = 'Este campo es obligatorio.';
 
 const isNumeric = (field: ConfigField) => field.type === 'integer' || field.type === 'number';
 
-/** Like fields.py: an empty string counts as missing. */
+/** Like fields.py: '' counts as missing. */
 const isEmpty = (value: FormValue | undefined) => value === undefined || value === '';
 
 export function asConfig(value: unknown): Record<string, unknown> {
@@ -94,11 +89,7 @@ export function validate(fields: readonly ConfigField[], values: FormValues): Fo
   return errors;
 }
 
-/**
- * The config to send. Keys the type does not declare are kept from `original`,
- * so editing a field never drops something set elsewhere; an optional field
- * left empty is removed, and the server fills in its default.
- */
+/** Keeps undeclared keys from `original`; an empty optional field is dropped so the server applies its default. */
 export function toConfig(
   fields: readonly ConfigField[],
   values: FormValues,

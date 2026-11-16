@@ -12,7 +12,7 @@ from pluto_sdk.dto import (
     to_epoch_ms,
 )
 
-# The worked example of docs/contracts/coordinates-dto.md §7.
+# Worked example from coordinates-dto.md §7.
 EXAMPLE_T0_MS = 1789763400000
 EXAMPLE_T_SENT_MS = 1789763398000
 EXAMPLE_POINTS = [(0, 12345, 4500), (1000, 12400, 4530), (2000, 12455, 4560)]

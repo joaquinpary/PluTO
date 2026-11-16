@@ -2,8 +2,7 @@
 
 The format is defined in docs/contracts/coordinates-dto.md; section numbers
 below refer to that document. Everything here is pure: no MQTT and no network,
-so the dispatcher that publishes on device/<device_id>/coordinates/polar only
-has to call it.
+so the dispatcher only has to call it.
 """
 import struct
 from dataclasses import dataclass
@@ -13,7 +12,7 @@ MAGIC = 0x50
 FLAG_HOLD = 0x01
 MAX_POINTS = 16
 
-# RNF-19.1 keeps a control payload under 64 bytes, which caps a batch at 5 points (§8).
+# RNF-19.1: under 64 bytes, so at most 5 points (§8).
 BATCH_POINTS = 5
 
 HEADER = struct.Struct('<BBBqq')
@@ -24,23 +23,19 @@ _MAX_DT_MS = 0xFFFFFFFF
 
 
 def to_epoch_ms(moment):
-    """Epoch milliseconds of an aware datetime, computed without going through float."""
+    """Epoch ms of an aware datetime, without going through float."""
     if moment.tzinfo is None:
         raise ValueError('timestamps must be timezone-aware')
     return (moment - _EPOCH) // timedelta(milliseconds=1)
 
 
 def az_to_cdeg(az_deg):
-    """Azimuth in degrees to centidegrees in 0..35999.
-
-    Rounding first and wrapping after matters: wrapping first turns any azimuth
-    in [359.995, 360) into 36000, which is out of range (§7.1).
-    """
+    """Centidegrees in 0..35999; round before wrapping or [359.995, 360) gives 36000 (§7.1)."""
     return round(az_deg * 100) % 36000
 
 
 def el_to_cdeg(el_deg):
-    """Elevation in degrees to centidegrees in -9000..9000."""
+    """Centidegrees in -9000..9000."""
     value = round(el_deg * 100)
     if not -9000 <= value <= 9000:
         raise ValueError(f'elevation {el_deg} is outside -90..90 degrees')
@@ -48,11 +43,7 @@ def el_to_cdeg(el_deg):
 
 
 def encode(t0_ms, t_sent_ms, points, flags=0):
-    """Pack one message. points are (dt_ms, az_cdeg, el_cdeg) tuples.
-
-    Raises ValueError for anything the board's decoder would reject (§6.1, §6.5),
-    so a bad batch fails here instead of being published and silently dropped.
-    """
+    """Pack (dt_ms, az_cdeg, el_cdeg) points; ValueError for what the board would drop (§6.1, §6.5)."""
     points = list(points)
 
     if flags & ~FLAG_HOLD:
@@ -80,31 +71,24 @@ def encode(t0_ms, t_sent_ms, points, flags=0):
 
 
 def encode_hold(t_sent_ms):
-    """A HOLD: stop and drop whatever is pending (§6.6). t0_ms is ignored by the board."""
+    """Stop and drop whatever is pending (§6.6). The board ignores t0_ms."""
     return encode(t_sent_ms, t_sent_ms, [], flags=FLAG_HOLD)
 
 
 @dataclass(frozen=True)
 class Batch:
-    """One planned message: when to publish it and what it carries."""
+    """One planned message."""
     send_at_ms: int
     t0_ms: int
     points: tuple  # (dt_ms, az_cdeg, el_cdeg)
 
     def encode(self, t_sent_ms):
-        # t_sent_ms is taken at publish time, not planned: it is what measures latency.
+        # Taken at publish time, not planned: it measures latency.
         return encode(self.t0_ms, t_sent_ms, self.points)
 
 
 def plan_batches(trajectory, batch_points=BATCH_POINTS, stride=2, lead_ms=2000):
-    """Split a trajectory into overlapping batches, each due lead_ms before its first point (§10).
-
-    trajectory is (t_ms, az_deg, el_deg) in time order, as coord_transform
-    produces it. Each batch starts `stride` points after the previous one, at
-    most halfway through it: since a new batch replaces what the board has
-    pending (§6.7), the overlap duplicates nothing and only keeps the board
-    supplied if one message is lost.
-    """
+    """Overlapping batches due lead_ms ahead; the overlap covers a lost message (§6.7, §10)."""
     if not 1 <= batch_points <= MAX_POINTS:
         raise ValueError(f'batch_points must be 1..{MAX_POINTS}')
     if not 1 <= stride <= max(1, batch_points // 2):

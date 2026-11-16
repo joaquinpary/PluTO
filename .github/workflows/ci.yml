@@ -1,6 +1,4 @@
-# Every PR, and every push to develop and main: the Django tests on Postgres,
-# the OpenAPI schema, and the front end's types, tests and build. The
-# end-to-end test (frontend/e2e) needs the whole stack and runs by hand.
+# frontend/e2e needs the whole stack, so it runs by hand.
 name: CI
 
 on:
@@ -16,7 +14,7 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        # The same major version docker-compose.yml runs.
+        # Same major as docker-compose.yml.
         image: postgres:17-alpine
         env:
           POSTGRES_DB: pluto
@@ -30,7 +28,7 @@ jobs:
           --health-timeout 3s
           --health-retries 12
     env:
-      # What settings.py reads (.env.example). Nothing here is a secret.
+      # Same keys as .env.example; nothing here is a secret.
       SECRET_KEY: ci-only-not-a-secret-0123456789abcdefghijklmnopqrstuvwxyz
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
@@ -70,9 +68,7 @@ jobs:
       - run: npm test -- --run
       - run: npm run build
 
-  # typecheck only catches an API change if src/shared/api/schema.d.ts was regenerated:
-  # this job fails when the committed file is not what gen:api makes from this
-  # commit's API.
+  # Fails if the committed schema.d.ts is stale; typecheck can't catch that.
   api-types:
     needs: backend
     runs-on: ubuntu-latest

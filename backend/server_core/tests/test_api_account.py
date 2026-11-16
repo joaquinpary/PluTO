@@ -1,4 +1,4 @@
-"""The account endpoints: healthcheck, first-run setup and password change."""
+"""Account endpoints."""
 import json
 import threading
 import time
@@ -109,7 +109,7 @@ class PasswordTests(FrontTestCase):
         self.assertFalse(self.operator().check_password('x'))
 
     def test_ends_every_other_session_and_hands_this_one_a_new_pair(self):
-        # A session on a lost phone, say: its refresh token must stop working.
+        # e.g. a session on a lost phone.
         other = Client().post('/api/auth/token', content_type='application/json',
                               data=json.dumps({'username': 'operator', 'password': 'x'})).json()['refresh']
 
@@ -142,15 +142,14 @@ class PasswordTests(FrontTestCase):
 
 
 class ConcurrentSetupTests(TransactionTestCase):
-    """Two first-run setups at once (two browsers, or a double click) must not
-    leave a second superuser the front end has no way to show."""
+    """Concurrent first-run setups must not create two superusers."""
 
     def test_only_one_of_two_simultaneous_setups_creates_a_user(self):
         User = get_user_model()
         create = User.objects.create_superuser
 
         def slow_create(*args, **kwargs):
-            time.sleep(0.5)  # widens the window between the check and the insert
+            time.sleep(0.5)  # widen the race window
             return create(*args, **kwargs)
 
         codes = []

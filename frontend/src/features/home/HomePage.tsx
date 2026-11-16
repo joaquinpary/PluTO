@@ -8,7 +8,6 @@ import { SkyPlot, type SkyAntenna } from '../boards/SkyPlot';
 import { alertsFor } from './alerts';
 import { useNow } from '../../shared/lib/useNow';
 
-/** Inicio: the boards live, the sky and the alerts. */
 export function HomePage() {
   const now = useNow();
   const live = useBoardsLive();
@@ -18,7 +17,7 @@ export function HomePage() {
 
   const alerts = alertsFor(boards, plugins.data ?? []);
   const antennas: SkyAntenna[] = boards.flatMap((board) => {
-    // Where it actually points when the board measures it, else where it was told to.
+    // Measured pointing if the board reports it, else the commanded one.
     const position = board.state?.meas ?? board.state;
     if (position?.az_cdeg == null || position.el_cdeg == null) return [];
     return [

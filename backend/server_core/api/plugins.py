@@ -1,8 +1,4 @@
-"""The plugin instances for the front end: types, create, edit and delete, actions and logs.
-
-What it takes to launch, stop or delete an instance lives in lifecycle.py;
-these views only translate it to HTTP.
-"""
+"""Plugin instance endpoints; the logic lives in lifecycle.py."""
 import logging
 
 import docker
@@ -30,7 +26,6 @@ from .exceptions import Conflict
 
 logger = logging.getLogger(__name__)
 
-# The HTTP status each LifecycleError.code becomes.
 LIFECYCLE_HTTP_STATUS = {
     'invalid_config': 400,
     'not_file_tracker': 400,
@@ -39,7 +34,7 @@ LIFECYCLE_HTTP_STATUS = {
     'already_running': 409,
     'protected': 409,
     'docker': 502,
-    # Mosquitto did not take the coordinates file (send_coordinates_file).
+    # Mosquitto refused the coordinates file.
     'broker': 503,
 }
 
@@ -49,7 +44,7 @@ UNKNOWN_PLUGIN = OpenApiResponse(description='No plugin instance with that uuid.
 def lifecycle_error_response(exc):
     body = {'detail': exc.detail}
     if exc.fields:
-        # The same shape as a rejected save, so the form shows them by field.
+        # Same shape as a rejected save, so the form shows them by field.
         body['config'] = exc.fields
     return Response(body, status=LIFECYCLE_HTTP_STATUS[exc.code])
 
@@ -62,11 +57,7 @@ def get_plugin(plugin_uuid):
 
 
 def docker_statuses(plugins):
-    """Docker's state of each plugin's container, by plugin_uuid, from a single listing (KAN-50).
-
-    Empty when Docker cannot be reached or the listing fails: the serializer
-    then says 'unknown'.
-    """
+    """Container status by plugin_uuid from one listing (KAN-50); {} if Docker fails."""
     if not plugins:
         return {}
     orchestrator = PluginOrchestrator()
@@ -75,8 +66,7 @@ def docker_statuses(plugins):
     try:
         by_name = orchestrator.container_statuses()
     except docker.errors.DockerException as exc:
-        # container_statuses() already turns an APIError into None; this is
-        # only a safety net for anything else docker-py raises.
+        # Safety net; container_statuses() already handles APIError.
         logger.warning('Could not list the plugin containers: %s', exc)
         return {}
     if by_name is None:
@@ -190,7 +180,7 @@ DOCKER_FAILED = OpenApiResponse(description='Docker failed; detail says how.')
 
 
 def run_action(action, plugin_uuid):
-    """Apply a lifecycle function and answer with the instance as it ended up."""
+    """Run a lifecycle action and return the resulting instance."""
     plugin = get_plugin(plugin_uuid)
     try:
         plugin = action(plugin)
@@ -276,8 +266,7 @@ class PluginLogsView(APIView):
             return Response({'detail': 'Could not reach Docker.'}, status=502)
         lines = orchestrator.container_logs(plugin.plugin_type, plugin.plugin_uuid, query.validated_data['tail'])
         if lines is None:
-            # No container, which is what stopping an instance leaves. A Docker
-            # error while looking it up is None too; the orchestrator logs it.
+            # Stopped instance, or a Docker error the orchestrator already logged.
             raise NotFound(f'{plugin.name} has no container. Launch it first.')
         return Response(LogsSerializer({'source': plugin.name, 'lines': lines}).data)
 
@@ -288,8 +277,7 @@ class PluginBoardView(APIView):
         if plugin is None:
             raise NotFound('No plugin instance with that uuid.')
         if plugin.status == PluginInstance.Status.RUNNING:
-            # The board reaches the container as ROTOR_DEVICE_ID when it is
-            # launched, so a change would not take effect until the next launch.
+            # ROTOR_DEVICE_ID is only read at launch.
             raise Conflict('Stop the plugin before changing its board.')
         return plugin
 

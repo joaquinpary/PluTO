@@ -10,7 +10,7 @@ from ..plugin_handlers.file_tracker import MAX_FILE_BYTES, build_file_message
 
 
 class TinyGSHandlerTests(SimpleTestCase):
-	"""What reaches the container. The validation lives in test_fields.py."""
+	"""What reaches the container; validation is in test_fields.py."""
 
 	def setUp(self):
 		self.handler = PLUGIN_HANDLERS['tinygs']

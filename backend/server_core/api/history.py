@@ -1,6 +1,4 @@
-"""The history the front end browses and exports: what the boards
-reported, what the plugins sent them and produced, and the results
-computed from them."""
+"""History endpoints: board states, orders, plugin data and results."""
 from datetime import timedelta
 
 from django.db.models import Count, F, Max, Min
@@ -45,15 +43,13 @@ def _query(serializer_class, request):
     return query.validated_data
 
 
-# CSVRenderer builds the whole file before sending it (about 3 600 rows/s):
-# a week of states at one per second takes a few minutes, well inside nginx's 600 s.
-# A cap instead of streaming: values() and a StreamingHttpResponse if longer exports are ever needed.
+# CSVRenderer builds the whole file (~3600 rows/s); a week at 1 Hz fits nginx's 600 s.
+# shortcut: capped instead of streamed, use values() + StreamingHttpResponse if longer exports are needed.
 CSV_MAX_RANGE = timedelta(days=7)
 
 
 class HistoryListView(ListAPIView):
-    """A history table: newest first with a cursor per page or, with
-    ?format=csv, every row of the range, oldest first."""
+    """History table: cursor pages newest first, or the whole range as CSV."""
     pagination_class = TimeCursorPagination
     renderer_classes = [JSONRenderer, CSVRenderer]
     query_serializer = RangeQuerySerializer
@@ -66,7 +62,7 @@ class HistoryListView(ListAPIView):
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
-            # drf-spectacular builds the schema without a request to filter by.
+            # Schema generation has no request.
             return self.serializer_class.Meta.model.objects.none()
 
         params = _query(self.query_serializer, self.request)
@@ -83,13 +79,12 @@ class HistoryListView(ListAPIView):
 
         params = _query(self.query_serializer, request)
         if 'from' not in params or 'to' not in params or params['to'] - params['from'] > CSV_MAX_RANGE:
-            # As JSON, not CSV, so the front shows the detail.
+            # JSON so the front can show the detail.
             request.accepted_renderer, request.accepted_media_type = JSONRenderer(), 'application/json'
             return Response({'detail': 'Exporting needs from and to, at most 7 days apart.'}, status=400)
 
         rows = self.get_queryset().order_by(self.time_field, 'pk').iterator(chunk_size=2000)
-        # A generator over .iterator(): the rows of a long range are never all
-        # instances at once. CSVRenderer still builds the whole text in memory.
+        # Generator so rows aren't all instantiated at once.
         response = Response({'results': (self.get_serializer(row).data for row in rows)})
         response['Content-Disposition'] = f'attachment; filename="{self.csv_name}.csv"'
         return response
@@ -124,12 +119,11 @@ class BoardStatesSeriesView(APIView):
         rotor = _rotor(device_id)
         params = _query(SeriesQuerySerializer, request)
         states = RotorState.objects.filter(rotor=rotor, received_at__gte=params['from'], received_at__lt=params['to'])
-        # The bounds first, in one aggregate query, so the rows can then be
-        # walked once without holding them.
+        # Bounds first so the rows can be streamed once.
         bounds = states.aggregate(start=Min('received_at'), end=Max('received_at'), count=Count('pk'))
         if not bounds['count']:
             return Response(SeriesSerializer({'points': []}).data)
-        # values(): a small dict per row is much cheaper than a model instance.
+        # values() is much cheaper than model instances.
         rows = (
             states.order_by('received_at', 'pk')
             .values('az_cdeg', 'el_cdeg', t=F('received_at'))
@@ -175,11 +169,11 @@ class PluginDataHistoryView(HistoryListView):
 
 
 def _results_response(request, key, rows, serializer_class, csv_name):
-    """{key: rows} as JSON or, with ?format=csv, one CSV line per row as a download."""
+    """{key: rows} as JSON, or a CSV download."""
     data = serializer_class({key: rows}).data
     if request.accepted_renderer.format != 'csv':
         return Response(data)
-    # CSVRenderer writes a line per element of "results".
+    # CSVRenderer writes one line per "results" item.
     response = Response({'results': data[key]})
     response['Content-Disposition'] = f'attachment; filename="{csv_name}.csv"'
     return response

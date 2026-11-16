@@ -37,9 +37,8 @@ export function PluginNewPage() {
     create.mutate(
       {
         name: name.trim(),
-        // GET /api/plugin-types lists exactly the types the ChoiceField takes, but the
-        // schema types PluginType.type as a plain string (making it a ChoiceField too
-        // would clash with ConfigField.type's enum under --fail-on-warn).
+        // The schema types PluginType.type as a plain string: a ChoiceField would clash
+        // with ConfigField.type's enum under --fail-on-warn.
         plugin_type: pluginType.type as Plugin['plugin_type'],
         config: toConfig(pluginType.config_fields, values),
       },

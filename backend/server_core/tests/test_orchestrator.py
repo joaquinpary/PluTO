@@ -117,7 +117,7 @@ class PluginOrchestratorTests(SimpleTestCase):
 
 
 def fake_container(name, status='running', logs=b''):
-    """A container as containers.list(sparse=True) or containers.get hand it back."""
+    """A container as the Docker SDK returns it."""
     container = MagicMock()
     container.attrs = {'Names': [f'/{name}']}
     container.status = status
@@ -149,7 +149,7 @@ class ContainerStatusesTests(DockerTestCase):
         statuses = self.orchestrator.container_statuses()
 
         self.assertEqual(statuses, {'plugin-tinygs-uuid-1': 'running', 'plugin-file-tracker-uuid-2': 'exited'})
-        # sparse: the list already carries names and states, so nothing is inspected one by one.
+        # sparse: no per-container inspect.
         self.client.containers.list.assert_called_once_with(all=True, sparse=True)
         self.client.containers.get.assert_not_called()
 
@@ -201,7 +201,7 @@ class LogsTests(DockerTestCase):
         lines = self.orchestrator.service_logs('coord_transform', tail=50)
 
         self.assertEqual(lines, ['POST /transform 200'])
-        # all=True: the logs of a service that crashed are the ones worth reading.
+        # all=True: a crashed service's logs matter most.
         self.client.containers.list.assert_called_once_with(all=True, filters={'label': [
             'com.docker.compose.service=coord_transform',
             'com.docker.compose.oneoff=False',

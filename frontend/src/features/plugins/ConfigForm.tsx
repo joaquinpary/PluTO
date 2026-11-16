@@ -8,11 +8,7 @@ interface Props {
   onChange: (name: string, value: FormValue) => void;
 }
 
-/**
- * One input per declared field: a new plugin type needs no change here (HU-04).
- * No asterisks: the end-to-end test finds each field by its exact label, and
- * Mantine's " *" is part of the label's text. A missing field shows its error.
- */
+/** Generic per field (HU-04). No asterisks: Mantine's " *" breaks the e2e exact-label match. */
 export function ConfigForm({ fields, values, errors, onChange }: Props) {
   return (
     <Stack gap="sm">
@@ -63,7 +59,7 @@ function ConfigInput({ field, value, error, onChange }: InputProps) {
         min={field.min ?? undefined}
         max={field.max ?? undefined}
         allowDecimal={field.type === 'number'}
-        // Out of range stays as typed, so validate() can say why instead of clamping it silently.
+        // Keep out-of-range input so validate() can explain it.
         clampBehavior="none"
       />
     );

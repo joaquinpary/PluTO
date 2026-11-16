@@ -1,8 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Runs against the whole stack (docker compose up), not a dev server, and
-// needs an empty database: see "Prueba de punta a punta" in the README.
-// E2E_BASE_URL is for a web port other than 80 (PLUTO_WEB_PORT).
+// Runs against docker compose up with an empty database (README, "Prueba de punta a punta").
+// E2E_BASE_URL: for a PLUTO_WEB_PORT other than 80.
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',

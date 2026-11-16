@@ -153,8 +153,7 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# The orchestrator builds the plugin images from here: plugins/ sits next to
-# backend/ in the repo, and next to /app in the server image.
+# Plugin images are built from here; plugins/ sits next to backend/ and /app.
 PLUGINS_DIR = BASE_DIR.parent / 'plugins'
 
 # Default primary key field type
@@ -201,9 +200,8 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Plugin ingestion and the front-end API. The prose contract is docs/contracts/ingest-api.md.',
     'VERSION': '1',
     'SERVE_INCLUDE_SCHEMA': False,
-    # The live boards, the orders and the history share DispatchOrder.Reason: one name for all.
+    # One enum name for DispatchOrder.Reason everywhere.
     'ENUM_NAME_OVERRIDES': {'HoldReasonEnum': 'server_core.models.DispatchOrder.Reason'},
-    # A request body gets its own component without the read-only fields, so
-    # the front's generated types do not ask for what the server answers.
+    # Separate request components so generated types omit read-only fields.
     'COMPONENT_SPLIT_REQUEST': True,
 }

@@ -1,7 +1,6 @@
 import type { Board, BoardLive, LiveState, Plugin, PluginType } from '../shared/api/types';
 
-// API rows for tests, with defaults that pass for a healthy station. If tsc
-// complains here, the schema changed: follow it.
+// Healthy-station defaults. If tsc complains here, the schema changed.
 
 export function liveState(overrides: Partial<LiveState> = {}): LiveState {
   return {
@@ -62,8 +61,7 @@ function configField(field: Pick<ConfigFieldRow, 'name' | 'label' | 'type'> & Pa
   return { help: '', required: false, default: null, min: null, max: null, choices: null, pattern: null, ...field };
 }
 
-// Labels, choices and patterns as the handlers declare them
-// (plugin_handlers/tinygs.py and file_tracker.py), so a fixture reads like the real API.
+// As plugin_handlers/tinygs.py and file_tracker.py declare them.
 export const TINYGS_TYPE: PluginType = {
   type: 'tinygs',
   label: 'TinyGS',

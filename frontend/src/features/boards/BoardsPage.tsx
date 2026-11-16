@@ -7,7 +7,7 @@ import { formatDateTime } from '../../shared/lib/format';
 import { notifySuccess } from '../../shared/lib/notify';
 import { scanErrorMessage, scanSummary } from './scan';
 
-// status is optional in the generated BoardPlugin (COMPONENT_SPLIT_REQUEST), though the server always sends it.
+// Optional in the generated type (COMPONENT_SPLIT_REQUEST), but always sent.
 function linkedPlugins(plugins: readonly { name: string; status?: string }[]): string {
   if (plugins.length === 0) return '—';
   return plugins.map((plugin) => (plugin.status === 'RUNNING' ? `${plugin.name} (en ejecución)` : plugin.name)).join(', ');

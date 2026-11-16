@@ -1,4 +1,4 @@
-"""The plugin endpoints of the front end: types, create, edit and delete, actions and logs."""
+"""Plugin endpoints."""
 import json
 from unittest.mock import MagicMock, patch
 
@@ -19,7 +19,7 @@ UNKNOWN_UUID = '00000000-0000-4000-8000-000000000000'
 
 
 def fake_orchestrator():
-    """A PluginOrchestrator that never talks to Docker: real container names, canned answers."""
+    """Orchestrator with canned answers instead of Docker."""
     orchestrator = PluginOrchestrator.__new__(PluginOrchestrator)
     orchestrator.client = MagicMock()
     orchestrator.container_statuses = MagicMock(return_value={})
@@ -28,7 +28,7 @@ def fake_orchestrator():
 
 
 class PluginApiTestCase(FrontTestCase):
-    """Logged in, with fake_orchestrator() in place of Docker for api_plugins."""
+    """Logged in, with fake_orchestrator() instead of Docker."""
 
     def setUp(self):
         super().setUp()
@@ -94,7 +94,7 @@ class PluginListTests(PluginApiTestCase):
 
         self.assertEqual(plugins['tinygs-1']['docker_status'], 'running')
         self.assertEqual(plugins['tinygs-2']['docker_status'], 'not_found')
-        # KAN-50: one listing for the whole table, not one Docker call per row.
+        # KAN-50: one listing, not one Docker call per row.
         self.orchestrator_cls.assert_called_once_with()
         self.orchestrator.container_statuses.assert_called_once_with()
 
@@ -106,8 +106,7 @@ class PluginListTests(PluginApiTestCase):
         self.assertEqual({plugin['docker_status'] for plugin in plugins}, {'unknown'})
 
     def test_docker_status_is_unknown_when_the_listing_fails(self):
-        # What container_statuses() answers when Docker errs: it logs
-        # the APIError itself and never raises it.
+        # container_statuses() logs the APIError and returns None.
         self.orchestrator.container_statuses.return_value = None
 
         response = self.client.get('/api/plugins')
@@ -121,8 +120,7 @@ class PluginListTests(PluginApiTestCase):
 
 class PluginSchemaTests(PluginApiTestCase):
     def test_an_unbound_instance_is_null_in_the_schema(self):
-        # frontend/src/shared/api/schema.d.ts is generated from this schema: without
-        # nullable, a Plugin's board would be typed as a string that never is null.
+        # Without nullable, schema.d.ts would type board as a non-null string.
         schema = self.client.get('/api/schema', {'format': 'json'}).json()
         board = schema['components']['schemas']['Plugin']['properties']['board']
 
@@ -261,8 +259,7 @@ class PluginWarningTests(PluginApiTestCase):
         self.assertEqual(self.warnings_for('no-board', 0, None), [])
 
     def test_warns_when_the_board_has_no_location(self):
-        # file_tracker would convert its file from (0, 0, 0) and point the real antenna
-        # somewhere else; tinygs would compute no passes. Neither says so on its own.
+        # Neither plugin warns: file_tracker would use (0, 0, 0), tinygs computes no passes.
         unplaced = Rotor.objects.create(device_id=OTHER_DEVICE_ID, min_elevation_deg=0)
 
         warnings = self.warnings_for('unplaced', 10, unplaced)

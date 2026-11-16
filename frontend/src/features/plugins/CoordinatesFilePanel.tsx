@@ -4,7 +4,7 @@ import { useUploadCoordinates } from './queries';
 import { ApiErrorAlert } from '../../shared/components/ApiErrorAlert';
 import { notifySuccess } from '../../shared/lib/notify';
 
-/** The server refuses more (MAX_FILE_BYTES in server_core/plugin_handlers/file_tracker.py). */
+/** Server limit (MAX_FILE_BYTES in plugin_handlers/file_tracker.py). */
 export const MAX_COORDINATES_BYTES = 1024 * 1024;
 
 export function CoordinatesFilePanel({ uuid }: { uuid: string }) {

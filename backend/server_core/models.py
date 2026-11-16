@@ -68,13 +68,12 @@ class PluginInstance(models.Model):
 
 class PluginData(models.Model):
     """One row per envelope a plugin sent to POST /api/plugin-data/<type>."""
-    # PROTECT: a plugin that already produced data is stopped, not deleted,
-    # so its history keeps pointing at a real instance.
+    # PROTECT: a plugin with data is stopped, not deleted.
     plugin = models.ForeignKey(PluginInstance, on_delete=models.PROTECT, related_name='data')
     device = models.TextField(blank=True)
     message_type = models.CharField(max_length=32)
 
-    # How the plugin normalized the payload before publishing it
+    # How the plugin normalized the payload.
     payload_format = models.TextField(default='json')
     schema_version = models.PositiveSmallIntegerField(default=1)
     payload = models.JSONField(default=dict)
@@ -139,10 +138,7 @@ class Rotor(models.Model):
         validators=[MinValueValidator(0.0), MaxValueValidator(360.0)],
         help_text='End of the allowed azimuth window. A value below the start wraps through north, e.g. 300 to 60.',
     )
-    # Where the antenna stands, which a plugin that computes passes needs
-    # (STATION_COORDINATES). On the board and not on the instance: it belongs
-    # to the place, and every instance bound to the board shares it. Optional,
-    # because a board registers itself long before anybody measures it.
+    # Station location for pass computation; on the board so its instances share it.
     latitude_deg = models.FloatField(
         null=True,
         blank=True,
@@ -167,7 +163,7 @@ class Rotor(models.Model):
         # Half a window says nothing: is 200 a floor or a ceiling?
         if (self.min_azimuth_deg is None) != (self.max_azimuth_deg is None):
             raise ValidationError('Set both azimuth limits, or leave both empty for no azimuth restriction.')
-        # Half a location is no place at all, and would silently mean none.
+        # Half a location would silently mean none.
         if (self.latitude_deg is None) != (self.longitude_deg is None):
             raise ValidationError('Set both latitude and longitude, or leave both empty.')
 
@@ -176,7 +172,7 @@ class Rotor(models.Model):
 
     @property
     def location(self):
-        """The station the plugins compute passes for, or None without latitude and longitude."""
+        """Station location for the plugins, or None."""
         if self.latitude_deg is None or self.longitude_deg is None:
             return None
         return {'lat': self.latitude_deg, 'lon': self.longitude_deg, 'alt': self.altitude_m or 0.0}
@@ -185,27 +181,27 @@ class Rotor(models.Model):
     # from GET /api/plugin/rotor (pluto_sdk.pointing.RotorLimits).
 
 class RotorState(models.Model):
-    """One state document from device/<device_id>/state (device-state.md §3)."""
+    """A state document from device/<device_id>/state."""
     rotor = models.ForeignKey(Rotor, on_delete=models.PROTECT, related_name='states')
     received_at = models.DateTimeField(db_default=Now())
 
-    # The board's own time, kept only when its clock was synced.
+    # Only kept when the board clock was synced.
     board_time = models.DateTimeField(null=True, blank=True)
     clock_synced = models.BooleanField(default=False)
     mode = models.CharField(max_length=16, blank=True)
 
-    # Commanded position in geographic centidegrees; the servos report nothing back.
+    # Commanded position, geographic centidegrees.
     az_cdeg = models.IntegerField(null=True, blank=True)
     el_cdeg = models.IntegerField(null=True, blank=True)
     pan_mode = models.CharField(max_length=16, blank=True)
 
-    # The last batch the board received, as the board reported it.
+    # Last batch the board received.
     batch_accepted = models.BooleanField(null=True, blank=True)
     batch_error = models.CharField(max_length=32, blank=True)
     latency_ms = models.BigIntegerField(null=True, blank=True)
     rejected_total = models.PositiveBigIntegerField(default=0)
 
-    # The whole document, so fields added to the contract later are not lost.
+    # Raw document, so new contract fields aren't lost.
     payload = models.JSONField(default=dict)
 
     class Meta:

@@ -24,7 +24,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** One board on the Home. A board without any state yet shows "Sin datos" and nothing else. */
+/** Without any state yet it shows only "Sin datos". */
 export function BoardCard({ board, now }: { board: BoardLive; now: number }) {
   const status = STATUS[boardStatus(board, now)];
   const { state, running_plugin: plugin, satellite } = board;

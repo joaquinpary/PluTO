@@ -39,7 +39,7 @@ class LaunchTests(TestCase):
         self.assertEqual(kwargs['tinygs_device'], 'My_TinyGS')
         self.plugin.refresh_from_db()
         self.assertEqual((self.plugin.status, self.plugin.container_id), (RUNNING, 'container-123'))
-        # Only the hash is kept, and it is the hash of what the container got.
+        # Only the hash of the container's token is kept.
         self.assertEqual(self.plugin.api_token_hash, hash_token(kwargs['api_token']))
 
     def test_a_failed_launch_is_an_error_and_leaves_no_token(self, orchestrator_cls):
@@ -55,7 +55,7 @@ class LaunchTests(TestCase):
         self.assertEqual((self.plugin.status, self.plugin.container_id, self.plugin.api_token_hash), (ERROR, '', ''))
 
     def test_an_unexpected_docker_failure_is_an_error_too(self, orchestrator_cls):
-        # docker-py also raises requests' own errors, e.g. a read timeout while building.
+        # docker-py also raises requests errors, e.g. a timeout while building.
         orchestrator_cls.return_value.spawn_plugin.side_effect = TimeoutError('read timed out')
 
         with self.assertRaises(LifecycleError) as raised:
@@ -101,7 +101,7 @@ class LaunchTests(TestCase):
         orchestrator_cls.return_value.spawn_plugin.assert_not_called()
 
     def test_a_board_driven_by_another_running_instance_is_busy(self, orchestrator_cls):
-        # RF-31.1. The admin never checked it when launching.
+        # RF-31.1.
         PluginInstance.objects.create(name='tinygs-2', plugin_type='tinygs', rotor=self.rotor, status=RUNNING)
 
         with self.assertRaises(LifecycleError) as raised:
@@ -133,7 +133,7 @@ class LaunchTests(TestCase):
         self.assertEqual(self.plugin.status, RUNNING)
 
     def test_a_second_launch_during_the_build_is_refused_and_keeps_the_token(self, orchestrator_cls):
-        # The image build can take minutes; another tab or the phone may press Launch meanwhile.
+        # A build takes minutes; another tab may press Launch meanwhile.
         second = {}
 
         def spawn(**kwargs):
@@ -229,7 +229,6 @@ class StopTests(TestCase):
         self.assertEqual(self.runtime(), (STOPPED, '', ''))
 
     def test_stops_from_error(self, orchestrator_cls):
-        # The admin only stopped RUNNING instances, so one in ERROR needed a sync first.
         orchestrator_cls.return_value.kill_plugin.return_value = (True, 'Plugin shut down correctly.')
         self.plugin.status = ERROR
         self.plugin.save()
@@ -239,7 +238,7 @@ class StopTests(TestCase):
         self.assertEqual(self.runtime(), (STOPPED, '', ''))
 
     def test_stops_the_container_of_the_stored_type(self, orchestrator_cls):
-        # Editing the type of a running instance used to orphan its container.
+        # Otherwise an unsaved type edit would orphan the container.
         orchestrator_cls.return_value.kill_plugin.return_value = (True, 'Plugin shut down correctly.')
         self.plugin.plugin_type = 'file_tracker'  # edited, never saved
 
@@ -347,7 +346,7 @@ class DeleteTests(TestCase):
                     delete(plugin)
                 self.assertEqual(raised.exception.code, 'protected')
 
-        # Checked before stopping: a refused delete leaves the instance as it was.
+        # Checked before stopping, so a refused delete changes nothing.
         orchestrator_cls.return_value.kill_plugin.assert_not_called()
         self.assertEqual(PluginInstance.objects.count(), 2)
 

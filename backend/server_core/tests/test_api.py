@@ -629,9 +629,7 @@ class SchemaTests(TestCase):
         return self.client.get('/api/schema', {'format': 'json'}).json()['components']['schemas']
 
     def test_request_bodies_leave_out_the_read_only_fields(self):
-        # frontend/src/shared/api/schema.d.ts is generated from this schema. With one
-        # component for both directions, logging in would have to send the
-        # access and refresh tokens it is asking for.
+        # With one component, schema.d.ts would make login send the tokens it asks for.
         login = self.schema_components()['TokenObtainPairRequest']
         self.assertEqual(sorted(login['required']), ['password', 'username'])
 
@@ -645,7 +643,7 @@ class NoAdminTests(TestCase):
     def test_the_admin_and_the_old_healthcheck_are_gone(self):
         self.assertNotIn('django.contrib.admin', settings.INSTALLED_APPS)
         self.assertEqual(self.client.get('/admin/').status_code, 404)
-        # The healthcheck lives at /api/health now.
+        # The old healthcheck at /.
         self.assertEqual(self.client.get('/').status_code, 404)
 
     def test_createsuperuser_is_still_there_as_plan_b(self):

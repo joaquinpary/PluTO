@@ -2,19 +2,17 @@ import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-// Needs an empty database: /setup only creates the user while there is none.
+// Needs an empty database: /setup only works with no user.
 const USERNAME = 'operador';
 const PASSWORD = 'antena-direccional-2026';
 const PLUGIN_NAME = 'e2e-file-tracker';
-// A board that only exists as a retained status in Mosquitto, the way a real
-// one leaves it (docs/contracts/device-state.md): 12 hex digits.
+// Only a retained status in Mosquitto, like a real board leaves.
 const BOARD_ID = 'e2e000000001';
 
 type ConfigField = { name: string; label: string; choices: [string, string][] | null };
 type PluginType = { type: string; label: string; config_fields: ConfigField[] };
 
-// npm run e2e runs from frontend/, so the compose file is one level up. The
-// broker credentials are the ones the mosquitto container already has.
+// Runs from frontend/; broker credentials come from the container's env.
 function publishBoardStatus(args: string) {
   execFileSync('docker', [
     'compose', '-f', resolve('..', 'docker-compose.yml'), 'exec', '-T', 'mosquitto', 'sh', '-c',
@@ -29,7 +27,7 @@ async function apiHeaders(request: APIRequestContext) {
   return { Authorization: `Bearer ${access}` };
 }
 
-// The label and option text of one choice field, as GET /api/plugin-types declares them.
+// Label and option text as GET /api/plugin-types declares them.
 function choice(pluginType: PluginType, name: string, value: string) {
   const field = pluginType.config_fields.find((candidate) => candidate.name === name);
   const match = field?.choices?.find(([candidate]) => candidate.toUpperCase() === value);
@@ -49,7 +47,7 @@ async function choose(page: Page, label: string, option: string) {
 }
 
 test.afterAll(() => {
-  // An empty retained message deletes the retained status.
+  // An empty retained message clears it.
   publishBoardStatus('-r -n');
 });
 
@@ -57,14 +55,12 @@ test('first run: user, login, home, a file_tracker instance and its board', asyn
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  // The stack was just started: wait for Django behind nginx.
+  // Wait for Django behind nginx.
   await expect
     .poll(async () => (await request.get('/api/health').catch(() => null))?.status() ?? 0, { timeout: 60_000 })
     .toBe(200);
 
-  // First run: with no user yet, the app sends us to /setup. Creating the user
-  // logs in with it and lands on the home page. The labels carry Mantine's
-  // " *" (the fields are required), hence the regular expressions.
+  // No user yet, so / goes to /setup. Regexes because Mantine appends " *" to required labels.
   await page.goto('/');
   await expect(page).toHaveURL(/\/setup$/);
   await page.getByLabel(/^Usuario/).fill(USERNAME);
@@ -74,7 +70,7 @@ test('first run: user, login, home, a file_tracker instance and its board', asyn
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: 'Inicio', exact: true })).toBeVisible();
 
-  // Log out and back in: the login returns to where the session ended.
+  // Login returns to where the session ended.
   await page.getByRole('button', { name: 'Cerrar sesión' }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel(/^Usuario/).fill(USERNAME);
@@ -83,8 +79,7 @@ test('first run: user, login, home, a file_tracker instance and its board', asyn
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: 'Inicio', exact: true })).toBeVisible();
 
-  // A file_tracker instance with a valid pair (ENU + POLAR). The labels come
-  // from the API, so the test does not repeat the handler's texts.
+  // file_tracker with ENU + POLAR; labels come from the API, not hardcoded.
   const headers = await apiHeaders(request);
   const types: PluginType[] = await (await request.get('/api/plugin-types', { headers })).json();
   const fileTracker = types.find((pluginType) => pluginType.type === 'file_tracker');
@@ -115,7 +110,7 @@ test('first run: user, login, home, a file_tracker instance and its board', asyn
     config: { coord_type: coordType.value, coord_format: coordFormat.value },
   });
 
-  // Boards: the scan finds the simulated board and the list shows it.
+  // The scan finds the simulated board.
   publishBoardStatus('-r -m online');
   await page.getByRole('link', { name: 'Placas', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Placas', exact: true })).toBeVisible();
@@ -124,7 +119,7 @@ test('first run: user, login, home, a file_tracker instance and its board', asyn
   expect((await scan).status()).toBe(200);
   await expect(page.getByText(BOARD_ID).first()).toBeVisible();
 
-  // Bind that board to the instance from its detail (PUT /api/plugins/<uuid>/board, PR #32).
+  // Bind the board from the instance detail (PR #32).
   await page.getByRole('link', { name: 'Instancias', exact: true }).click();
   await page.getByRole('link', { name: PLUGIN_NAME, exact: true }).click();
   await expect(page.getByRole('heading', { name: PLUGIN_NAME, exact: true })).toBeVisible();

@@ -1,8 +1,4 @@
-/**
- * The session. The access token lives only in memory; the refresh
- * token goes to localStorage, so reopening the page does not ask for the
- * password again.
- */
+// Access token in memory only; refresh token in localStorage so a reload keeps the session.
 export const REFRESH_KEY = 'pluto.refresh';
 
 let access: string | null = null;
@@ -33,12 +29,12 @@ export function getRefresh(): string | null {
   return localStorage.getItem(REFRESH_KEY);
 }
 
-/** Whether there is a session to try: an access token, or a refresh token to get one. */
+/** An access token, or a refresh token to get one. */
 export function hasSession(): boolean {
   return access !== null || getRefresh() !== null;
 }
 
-/** Called after every setTokens and clearTokens. Returns the unsubscribe. */
+/** Fires on every setTokens/clearTokens. */
 export function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
@@ -46,12 +42,8 @@ export function subscribe(listener: () => void): () => void {
   };
 }
 
-/**
- * Trades the refresh token for a new pair; true if it worked. Every caller
- * shares the request in flight: the refresh token rotates and is blacklisted
- * once used, so a second refresh with the same one would fail and log the
- * user out.
- */
+// One shared refresh: tokens rotate and are blacklisted once used, so a second
+// refresh with the same one would log the user out.
 export function refreshOnce(): Promise<boolean> {
   inFlight ??= refresh().finally(() => {
     inFlight = null;
@@ -76,8 +68,7 @@ async function refresh(): Promise<boolean> {
   }
 
   if (response.status === 401) {
-    // Another tab may have used the same token first and stored the next one:
-    // the session is still good, so try again with it.
+    // Another tab may have rotated it first: retry with the stored one.
     const current = getRefresh();
     if (current !== null && current !== token) return refresh();
     clearTokens(); // Expired or already used: only a new login helps.

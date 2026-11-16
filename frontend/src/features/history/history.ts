@@ -1,5 +1,3 @@
-/** Date ranges, cursors and cells of the history tabs. */
-
 export type DateRange = [Date | null, Date | null];
 
 export interface RangeQuery {
@@ -16,7 +14,7 @@ export function defaultRange(now = new Date()): DateRange {
   return [addDays(today, -1), today];
 }
 
-/** Two back-to-back periods of `days` days ending today: the one before, and the latest. */
+/** The previous `days` and the latest `days`, ending today. */
 export function comparisonRanges(now = new Date(), days = 7): [DateRange, DateRange] {
   const today = startOfDay(now);
   return [
@@ -25,10 +23,7 @@ export function comparisonRanges(now = new Date(), days = 7): [DateRange, DateRa
   ];
 }
 
-/**
- * The date picker gives local midnights and the API wants UTC instants, with
- * `to` excluded. The last day counts whole, so `to` is the midnight after it.
- */
+/** Local days to UTC instants; `to` is exclusive, so it's the midnight after the last day. */
 export function toRangeQuery([start, end]: DateRange): RangeQuery {
   const query: RangeQuery = {};
   if (start) query.from = startOfDay(start).toISOString();
@@ -36,32 +31,25 @@ export function toRangeQuery([start, end]: DateRange): RangeQuery {
   return query;
 }
 
-/**
- * The series and the results answer 400 without both ends (Tasks 9 and 10),
- * and their schema marks from and to as required. A type guard, so a caller
- * that checked it can pass the query where both are required.
- */
+/** Type guard: series and results answer 400 without both ends. */
 export function hasRange(query: RangeQuery): query is Required<RangeQuery> {
   return query.from !== undefined && query.to !== undefined;
 }
 
-/** The cursor in a DRF next/previous link. Its host may be server:8000, so only the query matters. */
+/** Only the query matters: the link's host may be server:8000. */
 export function cursorFrom(link: string | null | undefined): string | undefined {
   if (!link) return undefined;
   return new URL(link, 'http://localhost').searchParams.get('cursor') ?? undefined;
 }
 
-/** A table cell: a missing value stays empty instead of printing "null". */
+/** null/undefined render empty, not "null". */
 export function cell(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'boolean') return value ? 'Sí' : 'No';
   return String(value);
 }
 
-/**
- * The satellite of a plugin data row ({name, norad} | null, the shape of
- * GET /api/boards/live): cell() would print "[object Object]".
- */
+/** {name, norad} | null, which cell() would print as "[object Object]". */
 export function satelliteText(satellite: { name?: string | null; norad?: number | null } | null | undefined): string {
   if (!satellite) return '';
   const name = satellite.name ?? '';
@@ -73,7 +61,7 @@ export function toDegrees(cdeg: number | null | undefined): number | null {
   return cdeg === null || cdeg === undefined ? null : cdeg / 100;
 }
 
-/** Centidegrees as degrees with two decimals, or empty. */
+/** cdeg to degrees, two decimals. */
 export function degrees(cdeg: number | null | undefined): string {
   const value = toDegrees(cdeg);
   return value === null ? '' : value.toFixed(2);
@@ -83,7 +71,7 @@ export function fixed(value: number | null | undefined, digits = 1): string {
   return value === null || value === undefined ? '—' : value.toFixed(digits);
 }
 
-/** An epoch in milliseconds (t0_ms, t_end_ms, t_sent_ms) in local time, like formatDateTime. */
+/** Epoch ms (t0_ms, t_end_ms, t_sent_ms) in local time. */
 export function formatEpochMs(ms: number | null | undefined): string {
   return ms === null || ms === undefined ? '' : new Date(ms).toLocaleString('es-AR');
 }
@@ -96,7 +84,7 @@ export interface ReceptionDayLike {
   snr_mean: number | null;
 }
 
-/** A period's totals; the daily means are weighed by that day's packets. */
+/** Daily means weighted by each day's packets. */
 export function receptionSummary(days: readonly ReceptionDayLike[]) {
   let packets = 0;
   let crcErrors = 0;
