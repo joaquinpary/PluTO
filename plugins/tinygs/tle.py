@@ -7,6 +7,7 @@ opening a socket.
 """
 import logging
 import time
+import urllib.error
 import urllib.request
 from collections import namedtuple
 
@@ -22,7 +23,17 @@ USER_AGENT = 'PluTO/1.0 (satellite tracker; github.com/joaquinpary/PluTO)'
 # 200, not a 404, so it has to be recognized by its text.
 _NO_DATA = 'no gp data found'
 
+# How long a catalog number CelesTrak does not know is left alone. CelesTrak
+# firewalls clients that keep asking for data it does not have, and TinyGS hands
+# out made-up numbers (99xxx, 88xxx) for satellites outside the public catalog,
+# so asking again on every tracking message is what got the host banned.
+MISSING_TTL_SECONDS = 24 * 3600
+
 Tle = namedtuple('Tle', 'name line1 line2')
+
+
+class NoElements(ValueError):
+    """CelesTrak has no elements for that catalog number."""
 
 
 def download(url, timeout=10.0):
@@ -35,7 +46,7 @@ def download(url, timeout=10.0):
 def parse_tle_response(text):
     """The three lines CelesTrak returns -> Tle. Raises ValueError if it is not one."""
     if _NO_DATA in text.lower():
-        raise ValueError('CelesTrak has no elements for that catalog number')
+        raise NoElements('CelesTrak has no elements for that catalog number')
 
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if len(lines) != 3:
@@ -49,7 +60,15 @@ def parse_tle_response(text):
 
 
 def fetch_from_celestrak(norad):
-    return parse_tle_response(download(CELESTRAK_URL.format(norad=norad)))
+    try:
+        text = download(CELESTRAK_URL.format(norad=norad))
+    except urllib.error.HTTPError as exc:
+        # Today CelesTrak answers an unknown number with a 404 rather than the
+        # "No GP data found" text, so both mean the same thing.
+        if exc.code == 404:
+            raise NoElements(f'CelesTrak has no elements for {norad}') from exc
+        raise
+    return parse_tle_response(text)
 
 
 class TleCache:
@@ -59,14 +78,20 @@ class TleCache:
     most, so going to CelesTrak each time would be rude for no gain. It lives in
     memory only: plugins never touch the database, and losing it on a restart
     costs a single download.
+
+    It also remembers the numbers CelesTrak does not know, for
+    missing_ttl_seconds: asking again for them is what CelesTrak bans for.
     """
 
-    def __init__(self, ttl_seconds, fetch=fetch_from_celestrak, clock=time.monotonic):
+    def __init__(self, ttl_seconds, fetch=fetch_from_celestrak, clock=time.monotonic,
+                 missing_ttl_seconds=MISSING_TTL_SECONDS):
         self.ttl_seconds = ttl_seconds
+        self.missing_ttl_seconds = missing_ttl_seconds
         self._fetch = fetch
         # Monotonic, so a clock step on the host never makes a TLE look fresh.
         self._clock = clock
         self._entries = {}
+        self._missing = {}
 
     def get(self, norad):
         now = self._clock()
@@ -74,8 +99,23 @@ class TleCache:
         if cached is not None and now - cached[1] < self.ttl_seconds:
             return cached[0]
 
+        missing_since = self._missing.get(norad)
+        if missing_since is not None and now - missing_since < self.missing_ttl_seconds:
+            if cached is not None:
+                return cached[0]
+            raise NoElements(f'CelesTrak has no elements for {norad}, not asking again yet')
+
         try:
             tle = self._fetch(norad)
+        except NoElements:
+            self._missing[norad] = now
+            logger.warning(
+                'CelesTrak has no elements for %s, not asking again for %.0f h',
+                norad, self.missing_ttl_seconds / 3600,
+            )
+            if cached is None:
+                raise
+            return cached[0]
         except Exception:
             if cached is None:
                 raise
@@ -86,5 +126,6 @@ class TleCache:
             return cached[0]
 
         self._entries[norad] = (tle, now)
+        self._missing.pop(norad, None)
         logger.info('Fetched the elements for %s (%s)', norad, tle.name)
         return tle
