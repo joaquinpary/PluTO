@@ -10,6 +10,7 @@ import logging
 import threading
 from datetime import datetime, timezone
 
+from tle import NoElements
 from trajectory import build_raw_payload, next_pass
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,10 @@ class Tracker:
                 continue
             try:
                 self.process(norad)
+            except NoElements:
+                # Not an error: the cache already warned once and will not ask
+                # CelesTrak again for a while.
+                logger.debug('No elements for %s, skipping', norad)
             except Exception:
                 # CelesTrak down, a broken TLE: log it and wait for the next
                 # tracking message rather than lose the thread.

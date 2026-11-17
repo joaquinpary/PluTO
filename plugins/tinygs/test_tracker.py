@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-from tle import Tle
+from tle import NoElements, Tle
 from tracker import Tracker, assigned_norad
 
 NOW = datetime(2026, 9, 22, 15, 0, 0, tzinfo=timezone.utc)
@@ -166,6 +166,27 @@ class WorkerThreadTests(unittest.TestCase):
         tracker.on_tracking(tracking(norad=ISS, satellite='ISS'))
 
         self.assertTrue(published.wait(timeout=5), 'the worker died after the first failure')
+
+    def test_a_missing_satellite_is_not_logged_as_an_error(self):
+        published = threading.Event()
+        cache = MagicMock()
+        cache.get.side_effect = [NoElements('no elements'), Tle('ISS', '1 x', '2 x')]
+        tracker = Tracker(
+            station=STATION, cache=cache, submit=lambda raw: published.set(),
+            clock=FakeClock(), compute=MagicMock(return_value=a_pass()),
+        )
+        tracker.start()
+
+        with self.assertNoLogs('tracker', level='ERROR'):
+            tracker.on_tracking(tracking(norad=99433, satellite='Unlisted'))
+            for _ in range(100):
+                if cache.get.call_count:
+                    break
+                threading.Event().wait(0.01)
+
+        tracker.on_tracking(tracking(norad=ISS, satellite='ISS'))
+
+        self.assertTrue(published.wait(timeout=5), 'the worker died after a missing satellite')
 
 
 if __name__ == '__main__':
